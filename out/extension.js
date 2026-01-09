@@ -39,46 +39,51 @@ const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
-    const joinSessionCmd = vscode.commands.registerCommand("helloCigen.join", () => {
-        vscode.window.showInformationMessage("Join session command executed.");
-    });
-    const startSessionCmd = vscode.commands.registerCommand("helloCigen.start", async () => {
+    output.show(true);
+    const disposable = vscode.commands.registerCommand("helloCigen.start", async () => {
         const liveShare = await vsls.getApi();
         if (!liveShare) {
-            vscode.window.showErrorMessage("Live Share extension is not available or not enabled.");
+            vscode.window.showErrorMessage("Live Share API not available.");
             return;
         }
-        else {
-            vscode.window.showInformationMessage("Live Share extension is available.");
-        }
-        // 1. Start (or attach to) session
+        // Start or attach to session
         await liveShare.share();
-        // 2. Observe session lifecycle
-        liveShare.onDidChangeSession(() => {
-            console.log("Session changed:", liveShare.session);
-        });
-        // 3. Observe peers
-        liveShare.onDidChangePeers(() => {
-            console.log("Peers:", [...liveShare.peers.values()]);
-        });
-        // 4. Observe activities (optional API)
-        if (liveShare.onActivity) {
-            liveShare.onActivity(e => {
-                console.log("Activity:", e);
-            });
-        }
-        // 5. Host-only: expose a test service
-        if (liveShare.session?.role === vsls.Role.Host) {
-            const svc = await liveShare.shareService("helloCigen.test");
-            if (!svc)
+        // ---- SESSION STATE ----
+        const logSession = () => {
+            const s = liveShare.session;
+            if (!s) {
+                output.appendLine("Session: none");
                 return;
-            svc.onNotify("testNotify", (data) => {
-                console.log("Service notify:", data);
+            }
+            const msg = `Session ID: ${s.id}\n` +
+                `Role: ${s.role}\n` +
+                `Access: ${s.access}\n` +
+                `User: ${s.user?.displayName ?? "unknown"}`;
+            output.appendLine(msg);
+            vscode.window.showInformationMessage("Live Share session updated");
+        };
+        logSession();
+        liveShare.onDidChangeSession(() => {
+            output.appendLine("onDidChangeSession fired");
+            logSession();
+        });
+        // ---- PEERS ----
+        const logPeers = () => {
+            const peers = [...liveShare.peers.values()];
+            output.appendLine(`Peers count: ${peers.length}`);
+            peers.forEach(p => {
+                output.appendLine(`Peer ${p.peerNumber} | Role: ${p.role} | Access: ${p.access} | User: ${p.user?.displayName ?? "unknown"}`);
             });
-        }
+            vscode.window.showInformationMessage("Live Share peers changed");
+        };
+        logPeers();
+        liveShare.onDidChangePeers(() => {
+            output.appendLine("onDidChangePeers fired");
+            logPeers();
+            logSession();
+        });
     });
-    context.subscriptions.push(startSessionCmd);
-    context.subscriptions.push(joinSessionCmd);
+    context.subscriptions.push(disposable);
 }
 function deactivate() { }
 //# sourceMappingURL=extension.js.map
