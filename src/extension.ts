@@ -2,6 +2,10 @@ import { log } from "console";
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export function activate(context: vscode.ExtensionContext) {
 
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
@@ -66,8 +70,31 @@ export function activate(context: vscode.ExtensionContext) {
         logPeers();
         logSession();
       });
-    }
+    
+    // ---- TEXT CHANGE ATTRIBUTION ----
+    const textChangeDisposable = vscode.workspace.onDidChangeTextDocument(
+      async (e) => {
+        if (e.document.uri.scheme !== "file") {return;} // Only track file changes
+        try {
+          const peer = await liveShare.getPeerForTextDocumentChangeEvent(e);
+
+          await sleep(30000);
+          const file = e.document.uri.toString();
+          const peerLabel = peer
+            ? `Peer ${peer.peerNumber} (${peer.user?.displayName ?? "unknown"})`
+            : "Local user";
+
+          output.appendLine(
+            `[EDIT] ${peerLabel} edited file: ${file}`
+          );
+        } catch {
+          // Not a Live Share edit → ignore
+        }
+      }
+    );
+  }
   );
+
 
   context.subscriptions.push(disposable);
 }

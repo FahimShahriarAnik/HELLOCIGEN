@@ -37,6 +37,9 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
@@ -81,6 +84,24 @@ function activate(context) {
             output.appendLine("onDidChangePeers fired");
             logPeers();
             logSession();
+        });
+        // ---- TEXT CHANGE ATTRIBUTION ----
+        const textChangeDisposable = vscode.workspace.onDidChangeTextDocument(async (e) => {
+            if (e.document.uri.scheme !== "file") {
+                return;
+            } // Only track file changes
+            try {
+                const peer = await liveShare.getPeerForTextDocumentChangeEvent(e);
+                await sleep(30000);
+                const file = e.document.uri.toString();
+                const peerLabel = peer
+                    ? `Peer ${peer.peerNumber} (${peer.user?.displayName ?? "unknown"})`
+                    : "Local user";
+                output.appendLine(`[EDIT] ${peerLabel} edited file: ${file}`);
+            }
+            catch {
+                // Not a Live Share edit → ignore
+            }
         });
     });
     context.subscriptions.push(disposable);
