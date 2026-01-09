@@ -1,0 +1,41 @@
+{
+  "name": "hello-cigen",
+  "displayName": "HELLOCIGEN – Live Share API Testing",
+  "description": "Testing VS Code Live Share APIs for collaborative sessions",
+  "version": "0.0.1",
+  "publisher": "local-dev",
+  "engines": { "vscode": "^1.107.0" },
+  "main": "./out/extension.js",
+
+  "activationEvents": [
+    "onCommand:helloCigen.start"
+  ],
+
+"contributes": {
+  "commands": [
+    {
+      "command": "helloCigen.start",
+      "title": "HELLOCIGEN: Create a Live Share Session"
+    },
+    {
+      "command": "helloCigen.join",
+      "title": "HELLOCIGEN: Join a Live Share Session"
+    }
+  ]
+},
+
+  "dependencies": {
+    "vsls": "^0.3.0"
+  },
+
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/vscode": "^1.107.0",
+    "@types/node": "^20.0.0"
+  },
+
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  }
+}
