@@ -4,36 +4,48 @@
   "description": "Testing VS Code Live Share APIs for collaborative sessions",
   "version": "0.0.1",
   "publisher": "local-dev",
-  "engines": { "vscode": "^1.107.0" },
+  "engines": {
+    "vscode": "^1.107.0"
+  },
   "main": "./out/extension.js",
-
   "activationEvents": [
-    "onCommand:helloCigen.start"
+    "onCommand:helloCigen.start",
+    "onCommand:helloCigen.openChat"
   ],
-
-"contributes": {
-  "commands": [
-    {
-      "command": "helloCigen.start",
-      "title": "HELLOCIGEN: Create a Live Share Session"
-    },
-    {
-      "command": "helloCigen.join",
-      "title": "HELLOCIGEN: Join a Live Share Session"
-    }
-  ]
-},
-
+  "contributes": {
+    "commands": [
+      {
+        "command": "helloCigen.start",
+        "title": "HELLOCIGEN: Create a Live Share Session"
+      },
+      {
+        "command": "helloCigen.join",
+        "title": "HELLOCIGEN: Join a Live Share Session"
+      },
+      {
+        "command": "helloCigen.openChat",
+        "title": "HELLOCIGEN: Open Chat"
+      },
+      {
+        "command": "helloCigen.setApiKey",
+        "title": "HELLOCIGEN: Set OpenAI API Key"
+      },
+      {
+        "command": "helloCigen.clearApiKey",
+        "title": "HELLOCIGEN: Clear OpenAI API Key"
+      }
+    ]
+  },
   "dependencies": {
+    "openai": "^6.15.0",
     "vsls": "^0.3.0"
   },
-
   "devDependencies": {
-    "typescript": "^5.0.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.0.0",
     "@types/vscode": "^1.107.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.0.0"
   },
-
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./"

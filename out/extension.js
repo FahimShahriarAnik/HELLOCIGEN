@@ -37,8 +37,10 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
+const chatManager_1 = require("./chatManager");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
+    const chatManager = new chatManager_1.ChatManager(context);
     const joinSessionCmd = vscode.commands.registerCommand("helloCigen.join", () => {
         vscode.window.showInformationMessage("Join session command executed.");
     });
@@ -61,13 +63,7 @@ function activate(context) {
         liveShare.onDidChangePeers(() => {
             console.log("Peers:", [...liveShare.peers.values()]);
         });
-        // 4. Observe activities (optional API)
-        if (liveShare.onActivity) {
-            liveShare.onActivity(e => {
-                console.log("Activity:", e);
-            });
-        }
-        // 5. Host-only: expose a test service
+        // 4. Host-only: expose a test service
         if (liveShare.session?.role === vsls.Role.Host) {
             const svc = await liveShare.shareService("helloCigen.test");
             if (!svc)
@@ -76,6 +72,9 @@ function activate(context) {
                 console.log("Service notify:", data);
             });
         }
+    });
+    const openChatCmd = vscode.commands.registerCommand("helloCigen.openChat", () => {
+        chatManager.openChat();
     });
     context.subscriptions.push(startSessionCmd);
     context.subscriptions.push(joinSessionCmd);

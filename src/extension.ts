@@ -1,9 +1,12 @@
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 
+import { ChatManager } from "./chatManager";
+
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
 
+  const chatManager = new ChatManager(context);
 
   const joinSessionCmd = vscode.commands.registerCommand(
     "helloCigen.join",
@@ -42,14 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
         );
       });
 
-      // 4. Observe activities (optional API)
-      if (liveShare.onActivity) {
-        liveShare.onActivity(e => {
-          console.log("Activity:", e);
-        });
-      }
-
-      // 5. Host-only: expose a test service
+      // 4. Host-only: expose a test service
       if (liveShare.session?.role === vsls.Role.Host) {
         const svc = await liveShare.shareService("helloCigen.test");
         if (!svc) return;
@@ -60,8 +56,43 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const openChatCmd = vscode.commands.registerCommand(
+    "helloCigen.openChat", () => {
+      chatManager.openChat();
+    }
+  );
+
+  const setApiKeyCmd = vscode.commands.registerCommand(
+    "helloCigen.setApiKey",
+    async () => {
+      const apiKey = await vscode.window.showInputBox({
+        prompt: "Enter your OpenAI API key",
+        password: true,
+        ignoreFocusOut: true,
+      });
+
+      if (apiKey) {
+        await context.secrets.store("openai-api-key", apiKey);
+        vscode.window.showInformationMessage(
+          "OpenAI API key saved successfully!"
+        );
+      }
+    }
+  );
+
+  const clearApiKeyCmd = vscode.commands.registerCommand(
+    "helloCigen.clearApiKey",
+    async () => {
+      await context.secrets.delete("openai-api-key");
+      vscode.window.showInformationMessage("OpenAI API key cleared.");
+    }
+  );
+
   context.subscriptions.push(startSessionCmd);
   context.subscriptions.push(joinSessionCmd);
+  context.subscriptions.push(openChatCmd);
+  context.subscriptions.push(setApiKeyCmd);
+  context.subscriptions.push(clearApiKeyCmd);
 }
 
 export function deactivate() {}
