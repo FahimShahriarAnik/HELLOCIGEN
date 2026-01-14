@@ -42,7 +42,12 @@ function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
     /* ---------------- Json to keep track of file changes and fuction to write to that ---------------- */
-    const snapshotUri = vscode.Uri.joinPath(context.globalStorageUri, "file_state.json");
+    //   const snapshotUri = vscode.Uri.joinPath(
+    //   context.globalStorageUri,
+    //   "file_state.json"
+    // );
+    const root = vscode.workspace.workspaceFolders?.[0].uri;
+    const snapshotUri = vscode.Uri.joinPath(root, "file_state.json");
     async function writeSnapshot() {
         const obj = Object.fromEntries(fileStateMap);
         await vscode.workspace.fs.writeFile(snapshotUri, Buffer.from(JSON.stringify(obj, null, 2)));

@@ -6,7 +6,6 @@
   "publisher": "local-dev",
   "engines": { "vscode": "^1.107.0" },
   "main": "./out/extension.js",
-
   "activationEvents": [
     "onCommand:helloCigen.start"
   ],

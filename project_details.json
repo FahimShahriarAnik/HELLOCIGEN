@@ -1,0 +1,22 @@
+{
+  "projects": [
+    {
+      "project_id": "log_analyzer",
+      "title": "Log Analyzer & Insight Generator",
+      "description": "Build a Python tool that parses system logs and produces useful summaries such as error counts, time-based patterns, and basic insights.",
+      "complexity": "low"
+    },
+    {
+      "project_id": "mini_rest_api",
+      "title": "Mini REST API for Task Management",
+      "description": "Develop a small Python REST API that allows creating, reading, updating, and deleting tasks using a lightweight web framework.",
+      "complexity": "medium"
+    },
+    {
+      "project_id": "dataset_cleaning_pipeline",
+      "title": "Dataset Cleaning and Feature Extraction Pipeline",
+      "description": "Create a Python pipeline that loads a CSV dataset, cleans missing or inconsistent values, and computes useful derived features.",
+      "complexity": "medium"
+    }
+  ]
+}
