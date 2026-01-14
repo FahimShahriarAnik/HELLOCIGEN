@@ -76,8 +76,35 @@ function activate(context) {
     const openChatCmd = vscode.commands.registerCommand("helloCigen.openChat", () => {
         chatManager.openChat();
     });
+    const setApiKeyCmd = vscode.commands.registerCommand("helloCigen.setApiKey", async () => {
+        const apiKey = await vscode.window.showInputBox({
+            prompt: "Enter your OpenAI API key",
+            password: true,
+            ignoreFocusOut: true,
+        });
+        if (apiKey) {
+            await context.secrets.store("openai-api-key", apiKey);
+            vscode.window.showInformationMessage("OpenAI API key saved successfully!");
+        }
+    });
+    const clearApiKeyCmd = vscode.commands.registerCommand("helloCigen.clearApiKey", async () => {
+        await context.secrets.delete("openai-api-key");
+        vscode.window.showInformationMessage("OpenAI API key cleared.");
+    });
+    const sendActiveFileCmd = vscode.commands.registerCommand("helloCigen.sendActiveFile", async () => {
+        try {
+            await chatManager.sendActiveFile();
+        }
+        catch (err) {
+            vscode.window.showErrorMessage(`Failed to send active file: ${err}`);
+        }
+    });
     context.subscriptions.push(startSessionCmd);
     context.subscriptions.push(joinSessionCmd);
+    context.subscriptions.push(openChatCmd);
+    context.subscriptions.push(setApiKeyCmd);
+    context.subscriptions.push(clearApiKeyCmd);
+    context.subscriptions.push(sendActiveFileCmd);
 }
 function deactivate() { }
 //# sourceMappingURL=extension.js.map

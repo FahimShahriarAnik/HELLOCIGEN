@@ -34,6 +34,11 @@
         "command": "helloCigen.clearApiKey",
         "title": "HELLOCIGEN: Clear OpenAI API Key"
       }
+      ,
+      {
+        "command": "helloCigen.sendActiveFile",
+        "title": "HELLOCIGEN: Send Active File to Model"
+      }
     ]
   },
   "dependencies": {

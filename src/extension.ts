@@ -88,11 +88,23 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const sendActiveFileCmd = vscode.commands.registerCommand(
+    "helloCigen.sendActiveFile",
+    async () => {
+      try {
+        await chatManager.sendActiveFile();
+      } catch (err) {
+        vscode.window.showErrorMessage(`Failed to send active file: ${err}`);
+      }
+    }
+  );
+
   context.subscriptions.push(startSessionCmd);
   context.subscriptions.push(joinSessionCmd);
   context.subscriptions.push(openChatCmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
+  context.subscriptions.push(sendActiveFileCmd);
 }
 
 export function deactivate() {}
