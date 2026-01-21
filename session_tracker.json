@@ -1,5 +1,6 @@
 {
     "session_id": "001",
+    "session_link": "http://example.com/sessions/001",
     "project_title": "Log Analyzer & Insight Generator",
     "start_time": "2024-06-15T10:00:00Z",
     "no_of_participants": 3,
