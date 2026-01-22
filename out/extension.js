@@ -37,23 +37,10 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
-const fileStateMap = new Map();
+const serverManager_1 = require("./serverManager");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
-    /* ---------------- Json to keep track of file changes and fuction to write to that ---------------- */
-    //   const snapshotUri = vscode.Uri.joinPath(
-    //   context.globalStorageUri,
-    //   "file_state.json"
-    // );
-    const root = vscode.workspace.workspaceFolders?.[0].uri;
-    const snapshotUri = vscode.Uri.joinPath(root, "file_state.json");
-    async function writeSnapshot() {
-        const obj = Object.fromEntries(fileStateMap);
-        await vscode.workspace.fs.writeFile(snapshotUri, Buffer.from(JSON.stringify(obj, null, 2)));
-    }
-    const snapshotTimer = setInterval(writeSnapshot, 30_000);
-    context.subscriptions.push({ dispose: () => clearInterval(snapshotTimer) });
     const disposable = vscode.commands.registerCommand("helloCigen.start", async () => {
         const liveShare = await vsls.getApi();
         if (!liveShare) {
@@ -62,6 +49,18 @@ function activate(context) {
         }
         // Start or attach to Live Share session
         await liveShare.share();
+        /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
+        try {
+            await serverManager_1.serverManager.startServer();
+            // Now fetch project details
+            const projectDetails = await serverManager_1.serverManager.httpFetch("/project_details");
+            output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
+            // Later: create/update sessions
+            // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
+        }
+        catch (err) {
+            output.appendLine(`Server error: ${err}`);
+        }
         /* ---------------- SESSION STATE TRACKING ---------------- */
         const logSession = () => {
             const s = liveShare.session;
@@ -86,48 +85,11 @@ function activate(context) {
             output.appendLine("onDidChangePeers fired");
             logPeers();
         });
-        /* ==========================================================
-           FILE-WISE EDITOR + CONTENT TRACKING (CORE LOGIC)
-           ==========================================================
-           This listens to ALL text edits, attributes them to a peer
-           (if Live Share edit), and stores ONLY the latest state.
-        =========================================================== */
-        const textChangeDisposable = vscode.workspace.onDidChangeTextDocument(async (e) => {
-            // Ignore non-workspace files (output panel, virtual docs, etc.)
-            if (e.document.uri.scheme !== "file")
-                return;
-            let editorLabel = "Local user";
-            let peerNumber = null;
-            try {
-                // Live Share API: who caused THIS edit
-                const peer = await liveShare.getPeerForTextDocumentChangeEvent(e);
-                if (peer) {
-                    editorLabel =
-                        peer.user?.displayName ?? `Peer ${peer.peerNumber}`;
-                    peerNumber = peer.peerNumber;
-                }
-            }
-            catch {
-                // Not a Live Share edit → treat as local
-            }
-            /* -------------------------------------------------------
-               UPDATE FILE STATE MAP
-               -------------------------------------------------------
-               This is your ground truth:
-               - which peer last edited which file
-               - what the file looks like right now
-            --------------------------------------------------------*/
-            fileStateMap.set(e.document.uri.fsPath, {
-                lastEditor: editorLabel,
-                peerNumber,
-                lastUpdated: Date.now(),
-                content: e.document.getText(),
-            });
-            output.appendLine(`[TRACK] ${editorLabel} → ${e.document.uri.fsPath}`);
-        });
-        context.subscriptions.push(textChangeDisposable);
     });
     context.subscriptions.push(disposable);
 }
-function deactivate() { }
+function deactivate() {
+    // In deactivate():
+    serverManager_1.serverManager.stopServer();
+}
 //# sourceMappingURL=extension.js.map

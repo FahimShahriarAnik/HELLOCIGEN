@@ -4,35 +4,40 @@
   "description": "Testing VS Code Live Share APIs for collaborative sessions",
   "version": "0.0.1",
   "publisher": "local-dev",
-  "engines": { "vscode": "^1.107.0" },
+  "engines": {
+    "vscode": "^1.107.0"
+  },
   "main": "./out/extension.js",
   "activationEvents": [
     "onCommand:helloCigen.start"
   ],
-
-"contributes": {
-  "commands": [
-    {
-      "command": "helloCigen.start",
-      "title": "HELLOCIGEN: Create a Live Share Session"
-    },
-    {
-      "command": "helloCigen.join",
-      "title": "HELLOCIGEN: Join a Live Share Session"
-    }
-  ]
-},
-
+  "contributes": {
+    "commands": [
+      {
+        "command": "helloCigen.start",
+        "title": "HELLOCIGEN: Create a Live Share Session"
+      },
+      {
+        "command": "helloCigen.join",
+        "title": "HELLOCIGEN: Join a Live Share Session"
+      }
+    ]
+  },
   "dependencies": {
+    "express": "^5.2.1",
+    "mongodb": "^7.0.0",
+    "node-fetch": "^2.7.0",
     "vsls": "^0.3.0"
   },
-
   "devDependencies": {
-    "typescript": "^5.0.0",
+    "@types/express": "^5.0.6",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.0.9",
+    "@types/node-fetch": "^2.6.13",
     "@types/vscode": "^1.107.0",
-    "@types/node": "^20.0.0"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
-
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./"

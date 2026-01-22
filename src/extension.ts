@@ -1,6 +1,8 @@
 import { log } from "console";
 import * as vscode from "vscode";
 import * as vsls from "vsls";
+import { serverManager } from "./serverManager";
+
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -17,6 +19,19 @@ export function activate(context: vscode.ExtensionContext) {
       }
       // Start or attach to Live Share session
       await liveShare.share();
+
+      /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
+      try {
+        await serverManager.startServer();
+        // Now fetch project details
+        const projectDetails = await serverManager.httpFetch("/project_details");
+        output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
+        
+        // Later: create/update sessions
+        // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
+      } catch (err) {
+        output.appendLine(`Server error: ${err}`);
+      }
       /* ---------------- SESSION STATE TRACKING ---------------- */
       const logSession = () => {
         const s = liveShare.session;
@@ -34,7 +49,6 @@ export function activate(context: vscode.ExtensionContext) {
       });
 
       /* ---------------- PEER TRACKING ---------------- */
-
       const logPeers = () => {
         output.appendLine(`Peers count: ${liveShare.peers.length}`);
         liveShare.peers.forEach(p => {
@@ -54,4 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(disposable);
 }
 
-export function deactivate() {}
+export function deactivate() {
+  // In deactivate():
+  serverManager.stopServer();
+}
