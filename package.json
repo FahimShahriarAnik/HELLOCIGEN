@@ -63,13 +63,7 @@
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "helloCigen.launch",
-          "when": "view == helloCigen.sidebar",
-          "group": "navigation"
-        }
-      ]
+      "view/title": []
     }
   },
   "dependencies": {

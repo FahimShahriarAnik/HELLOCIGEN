@@ -271,7 +271,7 @@ export class HelloCigenSidebarViewProvider implements vscode.WebviewViewProvider
 <body>
   <div class="wrap">
     <h1>Select a mode</h1>
-    <p class="sub">Pick one option. We’ll remember it and open the chat.</p>
+    <p class="sub">Pick one option. We'll remember it and open the chat.</p>
 
     <div class="grid">
       <div class="tile" onclick="pick('Mode A')">
