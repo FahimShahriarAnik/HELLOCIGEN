@@ -20,3 +20,7 @@ npm-debug.log*
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# config env files
+config.local.ts
+config.local.js
