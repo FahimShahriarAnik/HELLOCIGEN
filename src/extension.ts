@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 
-import { ChatManager } from "./chatManager";
-import { HelloCigenSidebarViewProvider } from "./sidebarView";
+import { ChatManager } from "./ui/chatManager";
+import { HelloCigenSidebarViewProvider } from "./ui/sidebarView";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");

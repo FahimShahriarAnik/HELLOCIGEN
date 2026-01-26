@@ -37,8 +37,8 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
-const chatManager_1 = require("./chatManager");
-const sidebarView_1 = require("./sidebarView");
+const chatManager_1 = require("./ui/chatManager");
+const sidebarView_1 = require("./ui/sidebarView");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     const chatManager = new chatManager_1.ChatManager(context);
