@@ -4,7 +4,9 @@ import { MongoClient, Db, Collection } from "mongodb"; //Brings in the MongoDB d
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument } from "../models/sessionLog";
 
-const uri = process.env.MONGO_URI ?? "mongodb://localhost:27017";
+const uri = "mongodb+srv://shahr072_db_user:8ObDC6pWuNuUBCWN@cluster0.fp3ny34.mongodb.net/session_logs?retryWrites=true&w=majority"; // severe security risk: hardcoding credentials in source code, but okay for demo purposes
+
+//const uri = process.env.MONGO_URI ?? "mongodb://localhost:27017";
 const dbName = "session_logs";
 
 // Module-level variables
