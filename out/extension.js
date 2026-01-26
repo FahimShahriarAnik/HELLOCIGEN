@@ -37,10 +37,12 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
+const serverManager_1 = require("./serverManager");
 const chatManager_1 = require("./ui/chatManager");
 const sidebarView_1 = require("./ui/sidebarView");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
+    output.show(true);
     const chatManager = new chatManager_1.ChatManager(context);
     const sidebarProvider = new sidebarView_1.HelloCigenSidebarViewProvider(context, chatManager);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(sidebarView_1.HelloCigenSidebarViewProvider.viewId, sidebarProvider));
@@ -53,23 +55,35 @@ function activate(context) {
     const startSessionCmd = vscode.commands.registerCommand("helloCigen.start", async () => {
         const liveShare = await vsls.getApi();
         if (!liveShare) {
-            vscode.window.showErrorMessage("Live Share extension is not available or not enabled.");
+            vscode.window.showErrorMessage("Live Share API not available.");
             return;
         }
-        else {
-            vscode.window.showInformationMessage("Live Share extension is available.");
-        }
-        // 1. Start (or attach to) session
+        // Start or attach to Live Share session
         await liveShare.share();
-        // 2. Observe session lifecycle
+        /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
+        try {
+            await serverManager_1.serverManager.startServer();
+            // Now fetch project details
+            const projectDetails = await serverManager_1.serverManager.httpFetch("/project_details");
+            output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
+            // Later: create/update sessions
+            // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
+        }
+        catch (err) {
+            output.appendLine(`Server error: ${err}`);
+        }
+        /* ---------------- SESSION STATE TRACKING ---------------- */
+        const logSession = () => {
+            const s = liveShare.session;
+            if (!s)
+                return;
+            output.appendLine(`Session ID: ${s.id} | Role: ${s.role} | Access: ${s.access}`);
+        };
+        logSession();
         liveShare.onDidChangeSession(() => {
-            console.log("Session changed:", liveShare.session);
+            output.appendLine("onDidChangeSession fired");
+            logSession();
         });
-        // 3. Observe peers
-        liveShare.onDidChangePeers(() => {
-            console.log("Peers:", [...liveShare.peers.values()]);
-        });
-        // 4. Host-only: expose a test service
         if (liveShare.session?.role === vsls.Role.Host) {
             const svc = await liveShare.shareService("helloCigen.test");
             if (!svc)
@@ -113,5 +127,8 @@ function activate(context) {
     context.subscriptions.push(clearApiKeyCmd);
     context.subscriptions.push(sendActiveFileCmd);
 }
-function deactivate() { }
+function deactivate() {
+    // In deactivate():
+    serverManager_1.serverManager.stopServer();
+}
 //# sourceMappingURL=extension.js.map

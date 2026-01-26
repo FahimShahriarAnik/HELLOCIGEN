@@ -67,14 +67,20 @@
     }
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "mongodb": "^7.0.0",
+    "node-fetch": "^2.7.0",
     "openai": "^6.15.0",
     "vsls": "^0.3.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^20.0.0",
+    "@types/node": "^25.0.9",
+    "@types/node-fetch": "^2.6.13",
     "@types/vscode": "^1.107.0",
-    "typescript": "^5.0.0"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "compile": "tsc -p ./",
