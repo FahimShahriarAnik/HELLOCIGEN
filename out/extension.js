@@ -38,9 +38,15 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
 const chatManager_1 = require("./chatManager");
+const sidebarView_1 = require("./sidebarView");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     const chatManager = new chatManager_1.ChatManager(context);
+    const sidebarProvider = new sidebarView_1.HelloCigenSidebarViewProvider(context, chatManager);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(sidebarView_1.HelloCigenSidebarViewProvider.viewId, sidebarProvider));
+    const launchCmd = vscode.commands.registerCommand("helloCigen.launch", async () => {
+        await sidebarProvider.launch();
+    });
     const joinSessionCmd = vscode.commands.registerCommand("helloCigen.join", () => {
         vscode.window.showInformationMessage("Join session command executed.");
     });
@@ -99,6 +105,7 @@ function activate(context) {
             vscode.window.showErrorMessage(`Failed to send active file: ${err}`);
         }
     });
+    context.subscriptions.push(launchCmd);
     context.subscriptions.push(startSessionCmd);
     context.subscriptions.push(joinSessionCmd);
     context.subscriptions.push(openChatCmd);

@@ -64,6 +64,20 @@ class ChatManager {
             this.panel = undefined;
         });
     }
+    toggleChat() {
+        if (this.panel) {
+            this.closeChat();
+        }
+        else {
+            this.openChat();
+        }
+    }
+    closeChat() {
+        if (this.panel) {
+            this.panel.dispose();
+            this.panel = undefined;
+        }
+    }
     async getApiKey() {
         const stored = await this.context.secrets.get('openai-api-key');
         if (stored) {

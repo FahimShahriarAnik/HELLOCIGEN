@@ -39,6 +39,21 @@ export class ChatManager {
     });
   }
 
+  toggleChat() {
+    if (this.panel) {
+      this.closeChat();
+    } else {
+      this.openChat();
+    }
+  }
+
+  closeChat() {
+    if (this.panel) {
+      this.panel.dispose();
+      this.panel = undefined;
+    }
+  }
+
   private async getApiKey(): Promise<string | undefined> {
     const stored = await this.context.secrets.get('openai-api-key');
     if (stored) {

@@ -9,11 +9,33 @@
   },
   "main": "./out/extension.js",
   "activationEvents": [
+    "onView:helloCigen.sidebar",
+    "onCommand:helloCigen.launch",
     "onCommand:helloCigen.start",
     "onCommand:helloCigen.openChat"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [{
+        "id": "helloCigenContainer",
+        "title": "HelloCigen",
+        "icon": "assets/icon.png"
+      }]
+    },
+    "views": {
+      "helloCigenContainer":[
+        {
+          "id": "helloCigen.sidebar",
+          "name": "HelloCigen",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
+      {
+        "command": "helloCigen.launch",
+        "title": "HELLOCIGEN: Launch HelloCigen"
+      },
       {
         "command": "helloCigen.start",
         "title": "HELLOCIGEN: Create a Live Share Session"
@@ -39,7 +61,16 @@
         "command": "helloCigen.sendActiveFile",
         "title": "HELLOCIGEN: Send Active File to Model"
       }
-    ]
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "helloCigen.launch",
+          "when": "view == helloCigen.sidebar",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "dependencies": {
     "openai": "^6.15.0",

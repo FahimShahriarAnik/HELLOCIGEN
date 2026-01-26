@@ -2,11 +2,31 @@ import * as vscode from "vscode";
 import * as vsls from "vsls";
 
 import { ChatManager } from "./chatManager";
+import { HelloCigenSidebarViewProvider } from "./sidebarView";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
 
   const chatManager = new ChatManager(context);
+
+  const sidebarProvider = new HelloCigenSidebarViewProvider(
+    context,
+    chatManager
+  );
+
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      HelloCigenSidebarViewProvider.viewId,
+      sidebarProvider
+    )
+  );
+
+  const launchCmd = vscode.commands.registerCommand(
+    "helloCigen.launch",
+    async () => {
+      await sidebarProvider.launch();
+    }
+  );
 
   const joinSessionCmd = vscode.commands.registerCommand(
     "helloCigen.join",
@@ -99,6 +119,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  context.subscriptions.push(launchCmd);
   context.subscriptions.push(startSessionCmd);
   context.subscriptions.push(joinSessionCmd);
   context.subscriptions.push(openChatCmd);
