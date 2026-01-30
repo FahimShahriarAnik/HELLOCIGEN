@@ -3,8 +3,12 @@ import { MongoClient, Db, Collection } from "mongodb"; //Brings in the MongoDB d
 // Imports your TypeScript interfaces 
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument } from "../models/sessionLog";
+import { MONGO_URI } from "../config.local";
 
-const uri = process.env.MONGO_URI ?? "mongodb://localhost:27017";
+
+const uri = MONGO_URI;
+
+//const uri = process.env.MONGO_URI ?? "mongodb://localhost:27017";
 const dbName = "session_logs";
 
 // Module-level variables

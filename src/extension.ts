@@ -73,7 +73,16 @@ export function activate(context: vscode.ExtensionContext) {
         // Now fetch project details
         const projectDetails = await serverManager.httpFetch("/project_details");
         output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
-        
+
+        // printing each project infos
+        projectDetails.projects.forEach((project: any) => {
+          output.appendLine(`Project ID: ${project.project_id}`);
+          output.appendLine(`Title: ${project.title}`);
+          output.appendLine(`Description: ${project.description}`);
+          output.appendLine(`Complexity: ${project.complexity}`);
+          output.appendLine('---------------------------');
+        });
+
         // Later: create/update sessions
         // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
       } catch (err) {

@@ -82,6 +82,14 @@ function activate(context) {
             // Now fetch project details
             const projectDetails = await serverManager_1.serverManager.httpFetch("/project_details");
             output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
+            // printing each project infos
+            projectDetails.projects.forEach((project) => {
+                output.appendLine(`Project ID: ${project.project_id}`);
+                output.appendLine(`Title: ${project.title}`);
+                output.appendLine(`Description: ${project.description}`);
+                output.appendLine(`Complexity: ${project.complexity}`);
+                output.appendLine('---------------------------');
+            });
             // Later: create/update sessions
             // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
         }
