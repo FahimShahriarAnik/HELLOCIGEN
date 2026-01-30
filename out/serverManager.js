@@ -91,11 +91,11 @@ class ServerManager {
         }
         throw new Error("Server failed to start within 30s");
     }
-    async httpFetch(endpoint) {
+    async httpFetch(endpoint, options = {}) {
         if (!serverReady) {
             throw new Error("Server not ready");
         }
-        const resp = await (0, node_fetch_1.default)(`${SERVER_URL}${endpoint}`);
+        const resp = await (0, node_fetch_1.default)(`${SERVER_URL}${endpoint}`, options);
         if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
         }

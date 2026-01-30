@@ -2,6 +2,8 @@ import { log } from "console";
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "./serverManager";
+import { roleToString, accessToString } from "./utils/liveshareHelpers";
+import { createSessionLog } from "./utils/session_log_utils";
 
 
 import { ChatManager } from "./ui/chatManager";
@@ -68,23 +70,12 @@ export function activate(context: vscode.ExtensionContext) {
       await liveShare.share();
 
       /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
+      let projectDetails: any;
       try {
         await serverManager.startServer();
-        // Now fetch project details
-        const projectDetails = await serverManager.httpFetch("/project_details");
+        // // Now fetch project details
+        projectDetails = await serverManager.httpFetch("/project_details");
         output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
-
-        // printing each project infos
-        projectDetails.projects.forEach((project: any) => {
-          output.appendLine(`Project ID: ${project.project_id}`);
-          output.appendLine(`Title: ${project.title}`);
-          output.appendLine(`Description: ${project.description}`);
-          output.appendLine(`Complexity: ${project.complexity}`);
-          output.appendLine('---------------------------');
-        });
-
-        // Later: create/update sessions
-        // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
       } catch (err) {
         output.appendLine(`Server error: ${err}`);
       }
@@ -127,6 +118,62 @@ export function activate(context: vscode.ExtensionContext) {
           console.log("Service notify:", data);
         });
       }
+      // After PEER TRACKING...
+      await new Promise(r => setTimeout(r, 30000)); // wait for peers
+
+      /* ---------------- CREATING AND MANAGING SESSION LOGS ---------------- */
+      // Ask continue first
+      const cont = await vscode.window.showInformationMessage(
+        "Continue previous session?",
+        "Yes", "No"
+      );
+      let sessionNumber: number;
+      let sessionId: string;
+
+      // check if it's continuation
+      if (cont === "Yes") {
+        // Continue previous
+        const input = await vscode.window.showInputBox({ 
+          prompt: "Enter previous session ID" 
+        })!;
+        if (!input) return;
+        sessionId = input
+        
+        const prevSessions = await serverManager.httpFetch(`/sessions/${sessionId}`);
+        if (prevSessions.length === 0) {
+          throw new Error("No sessions found");
+        }
+        sessionNumber = prevSessions[prevSessions.length - 1].session_number + 1;
+        output.appendLine(`Continuing with session #${sessionNumber}`);
+      } else {
+        // New session
+        const s = liveShare.session!;
+        if (!s.id) throw new Error("Session ID is null");
+        sessionId = s.id;
+        sessionNumber = 1;
+        output.appendLine(`New session #1 for ${sessionId}`);
+      }
+
+      const firstProject = projectDetails.projects[0]; // assumes array[web:2] and using first project as placeholder.
+      // Reuse createSessionLog
+      await createSessionLog({ 
+        sessionId, 
+        firstProject, 
+        liveShare, 
+        sessionNumber 
+      }, serverManager);
+
+      // Update after 1 min
+      await new Promise(r => setTimeout(r, 60000));
+      await serverManager.httpFetch(`/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          project_title: "changed just for testing purpose",
+          updated_at: new Date().toISOString() 
+        })
+      });
+      output.appendLine(`Updated session ${sessionNumber} in Atlas`);
     }
   );
 

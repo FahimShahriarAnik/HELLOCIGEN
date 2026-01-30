@@ -3,7 +3,7 @@ import { MongoClient, Db, Collection } from "mongodb"; //Brings in the MongoDB d
 // Imports your TypeScript interfaces 
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument } from "../models/sessionLog";
-import { MONGO_URI } from "../config.local";
+import { MONGO_URI } from "../utils/config.local";
 
 
 const uri = MONGO_URI;
