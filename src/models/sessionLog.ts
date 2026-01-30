@@ -18,7 +18,7 @@ export interface Participant {
 export interface SessionLogDocument {
   _id: string;
   session_id: string;
-  session_link: string;
+  session_link?: string; // making it optional since it won't be required and hard to fetch from clipboard.
   session_number: number;
   project_title: string;
   start_time: string;

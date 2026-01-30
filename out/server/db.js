@@ -5,7 +5,7 @@ exports.getProjectConfigCollection = getProjectConfigCollection;
 exports.getSessionLogCollection = getSessionLogCollection;
 // src/db.ts
 const mongodb_1 = require("mongodb"); //Brings in the MongoDB driver types
-const config_local_1 = require("../config.local");
+const config_local_1 = require("../utils/config.local");
 const uri = config_local_1.MONGO_URI;
 //const uri = process.env.MONGO_URI ?? "mongodb://localhost:27017";
 const dbName = "session_logs";

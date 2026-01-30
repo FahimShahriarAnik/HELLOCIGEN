@@ -65,11 +65,11 @@ export class ServerManager {
     throw new Error("Server failed to start within 30s");
   }
 
-  async httpFetch(endpoint: string): Promise<any> {
+  async httpFetch(endpoint: string, options: import("node-fetch").RequestInit = {}): Promise<any> {
     if (!serverReady) {
       throw new Error("Server not ready");
     }
-    const resp = await fetch(`${SERVER_URL}${endpoint}`);
+    const resp = await fetch(`${SERVER_URL}${endpoint}`, options);
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
     }
