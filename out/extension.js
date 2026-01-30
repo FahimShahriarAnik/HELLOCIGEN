@@ -39,20 +39,36 @@ const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
 const serverManager_1 = require("./serverManager");
 const chatManager_1 = require("./ui/chatManager");
-const sidebarView_1 = require("./ui/sidebarView");
+const sessionSetupView_1 = require("./ui/sessionSetupView");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
     const chatManager = new chatManager_1.ChatManager(context);
-    const sidebarProvider = new sidebarView_1.HelloCigenSidebarViewProvider(context, chatManager);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(sidebarView_1.HelloCigenSidebarViewProvider.viewId, sidebarProvider));
-    const launchCmd = vscode.commands.registerCommand("helloCigen.launch", async () => {
-        await sidebarProvider.launch();
+    // const sidebarProvider = new HelloCigenSidebarViewProvider(
+    //   context,
+    //   chatManager
+    // );
+    // context.subscriptions.push(
+    //   vscode.window.registerWebviewViewProvider(
+    //     HelloCigenSidebarViewProvider.viewId,
+    //     sidebarProvider
+    //   )
+    // );
+    // Setup SessionSetupView
+    const sessionSetupProvider = new sessionSetupView_1.SessionSetupView(context, async (participantCount) => {
+        output.appendLine(`Session started with ${participantCount} participants`);
     });
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider("helloCigen.sessionSetup", sessionSetupProvider));
+    // const launchCmd = vscode.commands.registerCommand(
+    //   "helloCigen.launch",
+    //   async () => {
+    //     await sidebarProvider.launch();
+    //   }
+    // );
     const joinSessionCmd = vscode.commands.registerCommand("helloCigen.join", () => {
         vscode.window.showInformationMessage("Join session command executed.");
     });
-    const startSessionCmd = vscode.commands.registerCommand("helloCigen.start", async () => {
+    const disposable = vscode.commands.registerCommand("helloCigen.start", async () => {
         const liveShare = await vsls.getApi();
         if (!liveShare) {
             vscode.window.showErrorMessage("Live Share API not available.");
@@ -84,6 +100,19 @@ function activate(context) {
             output.appendLine("onDidChangeSession fired");
             logSession();
         });
+        /* ---------------- PEER TRACKING ---------------- */
+        const logPeers = () => {
+            output.appendLine(`Peers count: ${liveShare.peers.length}`);
+            liveShare.peers.forEach(p => {
+                output.appendLine(`Peer ${p.peerNumber} | Role: ${p.role} | Access: ${p.access}`);
+            });
+        };
+        logPeers();
+        liveShare.onDidChangePeers(() => {
+            output.appendLine("onDidChangePeers fired");
+            logPeers();
+        });
+        // 4. Host-only: expose a test service
         if (liveShare.session?.role === vsls.Role.Host) {
             const svc = await liveShare.shareService("helloCigen.test");
             if (!svc)
@@ -119,9 +148,8 @@ function activate(context) {
             vscode.window.showErrorMessage(`Failed to send active file: ${err}`);
         }
     });
-    context.subscriptions.push(launchCmd);
-    context.subscriptions.push(startSessionCmd);
-    context.subscriptions.push(joinSessionCmd);
+    // context.subscriptions.push(launchCmd);
+    context.subscriptions.push(disposable);
     context.subscriptions.push(openChatCmd);
     context.subscriptions.push(setApiKeyCmd);
     context.subscriptions.push(clearApiKeyCmd);

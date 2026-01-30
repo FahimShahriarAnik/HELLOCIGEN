@@ -5,6 +5,7 @@ import { serverManager } from "./serverManager";
 
 
 import { ChatManager } from "./ui/chatManager";
+import { SessionSetupView } from "./ui/sessionSetupView";
 import { HelloCigenSidebarViewProvider } from "./ui/sidebarView";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -14,24 +15,39 @@ export function activate(context: vscode.ExtensionContext) {
 
   const chatManager = new ChatManager(context);
 
-  const sidebarProvider = new HelloCigenSidebarViewProvider(
+  // const sidebarProvider = new HelloCigenSidebarViewProvider(
+  //   context,
+  //   chatManager
+  // );
+
+  // context.subscriptions.push(
+  //   vscode.window.registerWebviewViewProvider(
+  //     HelloCigenSidebarViewProvider.viewId,
+  //     sidebarProvider
+  //   )
+  // );
+
+  // Setup SessionSetupView
+  const sessionSetupProvider = new SessionSetupView(
     context,
-    chatManager
+    async (participantCount) => {
+      output.appendLine(`Session started with ${participantCount} participants`);
+    }
   );
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      HelloCigenSidebarViewProvider.viewId,
-      sidebarProvider
+      "helloCigen.sessionSetup",
+      sessionSetupProvider
     )
   );
 
-  const launchCmd = vscode.commands.registerCommand(
-    "helloCigen.launch",
-    async () => {
-      await sidebarProvider.launch();
-    }
-  );
+  // const launchCmd = vscode.commands.registerCommand(
+  //   "helloCigen.launch",
+  //   async () => {
+  //     await sidebarProvider.launch();
+  //   }
+  // );
 
   const joinSessionCmd = vscode.commands.registerCommand(
     "helloCigen.join",
@@ -93,11 +109,6 @@ export function activate(context: vscode.ExtensionContext) {
         output.appendLine("onDidChangePeers fired");
         logPeers();
       });
-        console.log(
-          "Peers:",
-          [...liveShare.peers.values()]
-        );
-      });
 
       // 4. Host-only: expose a test service
       if (liveShare.session?.role === vsls.Role.Host) {
@@ -153,7 +164,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(launchCmd);
+  // context.subscriptions.push(launchCmd);
   context.subscriptions.push(disposable);
   context.subscriptions.push(openChatCmd);
   context.subscriptions.push(setApiKeyCmd);
