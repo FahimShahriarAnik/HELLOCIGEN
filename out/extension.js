@@ -38,7 +38,7 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
 const serverManager_1 = require("./serverManager");
-const liveshareHelpers_1 = require("./utils/liveshareHelpers");
+const session_log_utils_1 = require("./utils/session_log_utils");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
@@ -51,22 +51,12 @@ function activate(context) {
         // Start or attach to Live Share session
         await liveShare.share();
         /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
+        let projectDetails;
         try {
             await serverManager_1.serverManager.startServer();
             // // Now fetch project details
-            // const projectDetails = await serverManager.httpFetch("/project_details");
-            // output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
-            // // printing each project infos
-            // projectDetails.projects.forEach((project: any) => {
-            //   output.appendLine(`Project ID: ${project.project_id}`);
-            //   output.appendLine(`Title: ${project.title}`);
-            //   output.appendLine(`Description: ${project.description}`);
-            //   output.appendLine(`Complexity: ${project.complexity}`);
-            //   output.appendLine('---------------------------');
-            // });
-            //creating and managing session logs
-            // Later: create/update sessions
-            // const sessionLogs = await serverManager.httpFetch(`/sessions/${liveShare.session?.id}`);
+            projectDetails = await serverManager_1.serverManager.httpFetch("/project_details");
+            output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
         }
         catch (err) {
             output.appendLine(`Server error: ${err}`);
@@ -95,50 +85,57 @@ function activate(context) {
             output.appendLine("onDidChangePeers fired");
             logPeers();
         });
+        // After PEER TRACKING...
+        await new Promise(r => setTimeout(r, 30000)); // wait for peers
         /* ---------------- CREATING AND MANAGING SESSION LOGS ---------------- */
-        // Select first project automatically
-        const projectDetails = await serverManager_1.serverManager.httpFetch("/project_details");
-        output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
-        const firstProject = projectDetails.projects[0]; // assumes array[web:2]
-        // Confirm everybody joined
-        await new Promise(r => setTimeout(r, 30000)); // wait 30s -- in real use, better to have a UI button
-        const confirm = await vscode.window.showInformationMessage(`Start session for ${firstProject.title}? (${liveShare.peers.length} peers)`, "Yes", "No");
-        if (confirm !== "Yes")
-            return;
-        // 1. Create session log doc
-        const s = liveShare.session;
-        const hostParticipant = {
-            name: "Host",
-            role: (0, liveshareHelpers_1.roleToString)(s.role),
-            joined_at: new Date().toISOString(),
-            access_level: (0, liveshareHelpers_1.accessToString)(s.access)
-        };
-        const allParticipants = [hostParticipant, ...liveShare.peers.map(p => ({
-                name: `Peer${p.peerNumber}`,
-                role: (0, liveshareHelpers_1.roleToString)(p.role),
-                joined_at: new Date().toISOString(),
-                access_level: (0, liveshareHelpers_1.accessToString)(p.access)
-            }))];
-        if (!s)
-            throw new Error("No LiveShare session");
-        const sessionId = s.id;
-        const sessionLog = {
-            session_id: sessionId,
-            //session_link: `http://localhost:4000/sessions/${sessionId}`, // example
-            session_number: 1, // for now, will change later to fetch latest + 1
-            project_title: firstProject.title,
-            start_time: new Date().toISOString(),
-            no_of_participants: allParticipants.length,
-            participants: allParticipants,
-            project_details: firstProject,
-            division_of_work: {} // empty for now
-        };
-        await serverManager_1.serverManager.httpFetch("/sessions", {
-            method: "POST",
+        // Ask continue first
+        const cont = await vscode.window.showInformationMessage("Continue previous session?", "Yes", "No");
+        let sessionNumber;
+        let sessionId;
+        // check if it's continuation
+        if (cont === "Yes") {
+            // Continue previous
+            const input = await vscode.window.showInputBox({
+                prompt: "Enter previous session ID"
+            });
+            if (!input)
+                return;
+            sessionId = input;
+            const prevSessions = await serverManager_1.serverManager.httpFetch(`/sessions/${sessionId}`);
+            if (prevSessions.length === 0) {
+                throw new Error("No sessions found");
+            }
+            sessionNumber = prevSessions[prevSessions.length - 1].session_number + 1;
+            output.appendLine(`Continuing with session #${sessionNumber}`);
+        }
+        else {
+            // New session
+            const s = liveShare.session;
+            if (!s.id)
+                throw new Error("Session ID is null");
+            sessionId = s.id;
+            sessionNumber = 1;
+            output.appendLine(`New session #1 for ${sessionId}`);
+        }
+        const firstProject = projectDetails.projects[0]; // assumes array[web:2] and using first project as placeholder.
+        // Reuse createSessionLog
+        await (0, session_log_utils_1.createSessionLog)({
+            sessionId,
+            firstProject,
+            liveShare,
+            sessionNumber
+        }, serverManager_1.serverManager);
+        // Update after 1 min
+        await new Promise(r => setTimeout(r, 60000));
+        await serverManager_1.serverManager.httpFetch(`/sessions/${sessionId}`, {
+            method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(sessionLog)
+            body: JSON.stringify({
+                project_title: "changed just for testing purpose",
+                updated_at: new Date().toISOString()
+            })
         });
-        output.appendLine(`Created session log 1 for ${sessionId}`);
+        output.appendLine(`Updated session ${sessionNumber} in Atlas`);
     });
     context.subscriptions.push(disposable);
 }

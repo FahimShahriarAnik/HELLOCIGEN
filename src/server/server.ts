@@ -90,13 +90,14 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
     const { session_id } = req.params;
     const update = req.body as Partial<SessionLogDocument>;
 
-    // add this guard:
-    if (!session_id || Array.isArray(session_id)) {
-      return res.status(400).json({ ok: false, error: "Invalid session_id" });
+    // Get max session_number for this session_id
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) {
+      return res.status(404).json({ ok: false, error: "No sessions found" });
     }
 
     const result = await coll.updateOne(
-      { session_id },
+      { session_id, session_number: latest[0].session_number },  // target latest
       { $set: update }
     );
 

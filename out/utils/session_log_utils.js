@@ -13,7 +13,7 @@ async function createSessionLog(params, serverManager) {
         joined_at: new Date().toISOString(),
         access_level: (0, liveshareHelpers_1.accessToString)(s.access)
     };
-    const allParticipants = [hostParticipant, ...liveShare.peers.map(p => ({
+    const allParticipants = [hostParticipant, ...liveShare.peers.map((p) => ({
             name: `Peer${p.peerNumber}`,
             role: (0, liveshareHelpers_1.roleToString)(p.role),
             joined_at: new Date().toISOString(),

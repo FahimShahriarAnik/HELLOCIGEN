@@ -24,7 +24,7 @@ export async function createSessionLog(
     access_level: accessToString(s.access)
   };
   
-  const allParticipants = [hostParticipant, ...liveShare.peers.map(p => ({
+  const allParticipants = [hostParticipant, ...liveShare.peers.map((p: any) => ({
     name: `Peer${p.peerNumber}`,
     role: roleToString(p.role),
     joined_at: new Date().toISOString(),
