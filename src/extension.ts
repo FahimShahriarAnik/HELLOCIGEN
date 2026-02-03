@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "./serverManager";
 import { roleToString, accessToString } from "./utils/liveshareHelpers";
-import { createSessionLog } from "./utils/session_log_utils";
+import { createSessionLog, patchSessionLog } from "./utils/session_log_utils";
 
 
 import { ChatManager } from "./ui/chatManager";
@@ -184,15 +184,11 @@ export function activate(context: vscode.ExtensionContext) {
 
       // Update after 1 min
       await new Promise(r => setTimeout(r, 60000));
-      await serverManager.httpFetch(`/sessions/${sessionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          project_title: "changed just for testing purpose",
-          updated_at: new Date().toISOString() 
-        })
-      });
-      output.appendLine(`Updated session ${sessionNumber} in Atlas`);
+      await patchSessionLog(sessionId, {
+        project_title: "changed just for testing purpose after 1 min",
+        updated_at: new Date().toISOString()
+      }, serverManager);
+      output.appendLine(`Updated session ${sessionNumber}`);
     }
   );
 
