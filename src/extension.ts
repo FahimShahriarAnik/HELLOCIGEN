@@ -17,23 +17,42 @@ export function activate(context: vscode.ExtensionContext) {
 
   const chatManager = new ChatManager(context);
 
-  // const sidebarProvider = new HelloCigenSidebarViewProvider(
-  //   context,
-  //   chatManager
-  // );
+  const sidebarProvider = new HelloCigenSidebarViewProvider(
+    context,
+    chatManager
+  );
 
-  // context.subscriptions.push(
-  //   vscode.window.registerWebviewViewProvider(
-  //     HelloCigenSidebarViewProvider.viewId,
-  //     sidebarProvider
-  //   )
-  // );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      HelloCigenSidebarViewProvider.viewId,
+      sidebarProvider
+    )
+  );
 
   // Setup SessionSetupView
   const sessionSetupProvider = new SessionSetupView(
     context,
     async (participantCount) => {
       output.appendLine(`Session started with ${participantCount} participants`);
+      try {
+        await serverManager.startServer();
+        const projectDetails = await serverManager.httpFetch("/project_details");
+        output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
+        return projectDetails.projects ?? [];
+      } catch (err) {
+        output.appendLine(`Server error: ${err}`);
+        return [];
+      }
+    },
+    async (project) => {
+      // Called when user selects a project
+      output.appendLine(`Project selected: ${project.title || project.project_id}`);
+      // Store selected project in global state
+      await context.globalState.update("helloCigen.selectedProject", project);
+      // Update sidebar to reflect the selected project
+      sidebarProvider.updateSelectedProject(project);
+      // Open the chat
+      await chatManager.openChat();
     }
   );
 

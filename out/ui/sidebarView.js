@@ -41,9 +41,20 @@ class HelloCigenSidebarViewProvider {
     chatManager;
     static viewId = "helloCigen.sidebar";
     view;
+    selectedProject;
     constructor(context, chatManager) {
         this.context = context;
         this.chatManager = chatManager;
+        // Load selected project from global state on initialization
+        this.selectedProject = this.context.globalState.get("helloCigen.selectedProject");
+    }
+    updateSelectedProject(project) {
+        this.selectedProject = project;
+        if (this.view) {
+            this.renderSidebar();
+            // Force webview refresh to ensure it updates
+            this.view.show?.(true);
+        }
     }
     resolveWebviewView(webviewView) {
         this.view = webviewView;
@@ -62,6 +73,13 @@ class HelloCigenSidebarViewProvider {
             }
             if (msg?.type === "closeChat") {
                 this.chatManager.closeChat();
+            }
+            if (msg?.type === "cancelSession") {
+                // Clear the selected project
+                this.selectedProject = undefined;
+                await this.context.globalState.update("helloCigen.selectedProject", undefined);
+                this.renderSidebar();
+                vscode.window.showInformationMessage("Session cancelled. You can start a new session.");
             }
         });
         // Render initial sidebar UI
@@ -176,31 +194,47 @@ class HelloCigenSidebarViewProvider {
 <body>
   <div class="card">
     <h2>HELLOCIGEN</h2>
+    
+    ${this.selectedProject ? `
     <div class="info-section">
-      <div class="info-label">📋 Selected Mode</div>
-      <div class="info-value">${choice ? `<span class="badge">${escapeHtml(choice)}</span>` : '<span class="empty-state">No mode selected</span>'}</div>
+      <div class="info-label">📁 Active Project</div>
+      <div class="info-value">${escapeHtml(this.selectedProject.title || this.selectedProject.project_id || 'Unknown')}</div>
+      ${this.selectedProject.description ? `<p style="margin-top:6px; font-size:11px; opacity:0.8;">${escapeHtml(this.selectedProject.description)}</p>` : ''}
     </div>
     
-    <button id="launchBtn">${choice ? "Open Chat" : "Choose Mode & Open Chat"}</button>
-    <button id="toggleChatBtn" class="secondary" ${!choice ? 'style="display:none;"' : ''}>Toggle Chat</button>
-    <button id="changeBtn" class="secondary">Change Mode</button>
-    <button id="closeChatBtn" class="danger" ${!choice ? 'style="display:none;"' : ''}>Close Chat</button>
+    <button id="toggleChatBtn">Toggle Chat</button>
+    <button id="closeChatBtn" class="secondary">Close Chat</button>
+    <button id="cancelBtn" class="danger">Cancel Session</button>
+    ` : `
+    <div class="info-section">
+      <div class="info-label">📋 Session Status</div>
+      <div class="info-value"><span class="empty-state">No active session</span></div>
+    </div>
+    <p style="font-size:12px; opacity:0.8; margin-top:8px;">Start a session from the Session Setup view to select a project and begin collaboration.</p>
+    `}
   </div>
 
   <script>
     const vscode = acquireVsCodeApi();
-    document.getElementById('launchBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'launch' });
-    });
-    document.getElementById('changeBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'changeMode' });
-    });
-    document.getElementById('toggleChatBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'toggleChat' });
-    });
-    document.getElementById('closeChatBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'closeChat' });
-    });
+    const toggleBtn = document.getElementById('toggleChatBtn');
+    const closeBtn = document.getElementById('closeChatBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'toggleChat' });
+      });
+    }
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'closeChat' });
+      });
+    }
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'cancelSession' });
+      });
+    }
   </script>
 </body>
 </html>`;

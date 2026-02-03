@@ -38,26 +38,38 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const vsls = __importStar(require("vsls"));
 const serverManager_1 = require("./serverManager");
+const session_log_utils_1 = require("./utils/session_log_utils");
 const chatManager_1 = require("./ui/chatManager");
 const sessionSetupView_1 = require("./ui/sessionSetupView");
-const session_log_utils_1 = require("./utils/session_log_utils");
+const sidebarView_1 = require("./ui/sidebarView");
 function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
     const chatManager = new chatManager_1.ChatManager(context);
-    // const sidebarProvider = new HelloCigenSidebarViewProvider(
-    //   context,
-    //   chatManager
-    // );
-    // context.subscriptions.push(
-    //   vscode.window.registerWebviewViewProvider(
-    //     HelloCigenSidebarViewProvider.viewId,
-    //     sidebarProvider
-    //   )
-    // );
+    const sidebarProvider = new sidebarView_1.HelloCigenSidebarViewProvider(context, chatManager);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(sidebarView_1.HelloCigenSidebarViewProvider.viewId, sidebarProvider));
     // Setup SessionSetupView
     const sessionSetupProvider = new sessionSetupView_1.SessionSetupView(context, async (participantCount) => {
         output.appendLine(`Session started with ${participantCount} participants`);
+        try {
+            await serverManager_1.serverManager.startServer();
+            const projectDetails = await serverManager_1.serverManager.httpFetch("/project_details");
+            output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
+            return projectDetails.projects ?? [];
+        }
+        catch (err) {
+            output.appendLine(`Server error: ${err}`);
+            return [];
+        }
+    }, async (project) => {
+        // Called when user selects a project
+        output.appendLine(`Project selected: ${project.title || project.project_id}`);
+        // Store selected project in global state
+        await context.globalState.update("helloCigen.selectedProject", project);
+        // Update sidebar to reflect the selected project
+        sidebarProvider.updateSelectedProject(project);
+        // Open the chat
+        await chatManager.openChat();
     });
     context.subscriptions.push(vscode.window.registerWebviewViewProvider("helloCigen.sessionSetup", sessionSetupProvider));
     // const launchCmd = vscode.commands.registerCommand(
@@ -112,6 +124,15 @@ function activate(context) {
             output.appendLine("onDidChangePeers fired");
             logPeers();
         });
+        // 4. Host-only: expose a test service
+        if (liveShare.session?.role === vsls.Role.Host) {
+            const svc = await liveShare.shareService("helloCigen.test");
+            if (!svc)
+                return;
+            svc.onNotify("testNotify", (data) => {
+                console.log("Service notify:", data);
+            });
+        }
         // After PEER TRACKING...
         await new Promise(r => setTimeout(r, 30000)); // wait for peers
         /* ---------------- CREATING AND MANAGING SESSION LOGS ---------------- */
@@ -163,15 +184,6 @@ function activate(context) {
             })
         });
         output.appendLine(`Updated session ${sessionNumber} in Atlas`);
-        // 4. Host-only: expose a test service
-        if (liveShare.session?.role === vsls.Role.Host) {
-            const svc = await liveShare.shareService("helloCigen.test");
-            if (!svc)
-                return;
-            svc.onNotify("testNotify", (data) => {
-                console.log("Service notify:", data);
-            });
-        }
     });
     const openChatCmd = vscode.commands.registerCommand("helloCigen.openChat", () => {
         chatManager.openChat();
