@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createSessionLog = createSessionLog;
+exports.patchSessionLog = patchSessionLog;
 const liveshareHelpers_1 = require("./liveshareHelpers");
 async function createSessionLog(params, serverManager) {
     const { sessionId, firstProject, liveShare, sessionNumber } = params;
@@ -35,5 +36,12 @@ async function createSessionLog(params, serverManager) {
         body: JSON.stringify(sessionLog)
     });
     console.log(`Created session log ${sessionNumber} for ${sessionId}`);
+}
+async function patchSessionLog(sessionId, updates, serverManager) {
+    await serverManager.httpFetch(`/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates)
+    });
 }
 //# sourceMappingURL=session_log_utils.js.map

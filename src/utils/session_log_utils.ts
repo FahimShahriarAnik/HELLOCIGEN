@@ -50,3 +50,16 @@ export async function createSessionLog(
   
   console.log(`Created session log ${sessionNumber} for ${sessionId}`);
 }
+
+export async function patchSessionLog(
+  sessionId: string,
+  updates: Record<string, any>,
+  serverManager: ServerManager
+): Promise<void> {
+  await serverManager.httpFetch(`/sessions/${sessionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates)
+  });
+}
+

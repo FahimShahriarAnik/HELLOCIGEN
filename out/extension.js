@@ -127,15 +127,11 @@ function activate(context) {
         }, serverManager_1.serverManager);
         // Update after 1 min
         await new Promise(r => setTimeout(r, 60000));
-        await serverManager_1.serverManager.httpFetch(`/sessions/${sessionId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                project_title: "changed just for testing purpose",
-                updated_at: new Date().toISOString()
-            })
-        });
-        output.appendLine(`Updated session ${sessionNumber} in Atlas`);
+        await (0, session_log_utils_1.patchSessionLog)(sessionId, {
+            project_title: "changed just for testing purpose after 1 min",
+            updated_at: new Date().toISOString()
+        }, serverManager_1.serverManager);
+        output.appendLine(`Updated session ${sessionNumber}`);
     });
     context.subscriptions.push(disposable);
 }
