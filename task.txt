@@ -1,0 +1,2 @@
+# maybe some small tasks like having a template code where they can debug the existing bugs
+# finding some papers online that experimented with bug fixing tasks, assignment for coding in teams

@@ -46,6 +46,35 @@ function activate(context) {
     const output = vscode.window.createOutputChannel("HELLOCIGEN");
     output.show(true);
     const chatManager = new chatManager_1.ChatManager(context);
+    let trackingRegistered = false;
+    const registerLiveShareTracking = (liveShare) => {
+        if (trackingRegistered)
+            return;
+        trackingRegistered = true;
+        output.show(true);
+        const logSession = () => {
+            const s = liveShare.session;
+            if (!s)
+                return;
+            output.appendLine(`Session ID: ${s.id} | Role: ${s.role} | Access: ${s.access}`);
+        };
+        const logPeers = () => {
+            output.appendLine(`Peers count: ${liveShare.peers.length}`);
+            liveShare.peers.forEach(p => {
+                output.appendLine(`Peer ${p.peerNumber} | Role: ${p.role} | Access: ${p.access}`);
+            });
+        };
+        logSession();
+        liveShare.onDidChangeSession(() => {
+            output.appendLine("onDidChangeSession fired");
+            logSession();
+        });
+        logPeers();
+        liveShare.onDidChangePeers(() => {
+            output.appendLine("onDidChangePeers fired");
+            logPeers();
+        });
+    };
     const sidebarProvider = new sidebarView_1.HelloCigenSidebarViewProvider(context, chatManager);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(sidebarView_1.HelloCigenSidebarViewProvider.viewId, sidebarProvider));
     // Setup SessionSetupView
@@ -68,6 +97,15 @@ function activate(context) {
         await context.globalState.update("helloCigen.selectedProject", project);
         // Update sidebar to reflect the selected project
         sidebarProvider.updateSelectedProject(project);
+        // Start or attach to Live Share session and register tracking
+        const liveShare = await vsls.getApi();
+        if (!liveShare) {
+            vscode.window.showErrorMessage("Live Share API not available.");
+        }
+        else {
+            await liveShare.share();
+            registerLiveShareTracking(liveShare);
+        }
         // Open the chat
         await chatManager.openChat();
     });
