@@ -108,6 +108,18 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
   }
 });
 
+// This block gives the UI a simple list of session ids to resume.
+app.get("/sessions", async (_req: Request, res: Response) => {
+  try {
+    const coll = await getSessionLogCollection();
+    const sessionIds = await coll.distinct("session_id");
+    res.json(sessionIds);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "Failed to fetch session ids" });
+  }
+});
+
 // GET /sessions/:session_id - Get ALL session logs for a given session_id, sorted by session_number
 // In Client-side:
 // docs.length = total session count.

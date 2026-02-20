@@ -7,7 +7,8 @@ import { createSessionLog, patchSessionLog } from "./utils/session_log_utils";
 
 
 import { ChatManager } from "./ui/chatManager";
-import { SessionSetupView } from "./ui/sessionSetupView";
+import { InitialSessionView } from "./ui/initialSessionView";
+// import { SessionSetupView } from "./ui/sessionSetupView";
 import { HelloCigenSidebarViewProvider } from "./ui/sidebarView";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -59,13 +60,23 @@ export function activate(context: vscode.ExtensionContext) {
     chatManager
   );
 
+  const initialSessionProvider = new InitialSessionView();
+
+  // context.subscriptions.push(
+  //   vscode.window.registerWebviewViewProvider(
+  //     HelloCigenSidebarViewProvider.viewId,
+  //     sidebarProvider
+  //   )
+  // );
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      HelloCigenSidebarViewProvider.viewId,
-      sidebarProvider
+      InitialSessionView.viewId,
+      initialSessionProvider
     )
   );
 
+  /*
   // Setup SessionSetupView
   const sessionSetupProvider = new SessionSetupView(
     context,
@@ -107,6 +118,7 @@ export function activate(context: vscode.ExtensionContext) {
       sessionSetupProvider
     )
   );
+  */
 
   // const launchCmd = vscode.commands.registerCommand(
   //   "helloCigen.launch",

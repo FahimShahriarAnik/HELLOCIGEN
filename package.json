@@ -9,6 +9,7 @@
   },
   "main": "./out/extension.js",
   "activationEvents": [
+    "onView:helloCigen.initialSession",
     "onView:helloCigen.sidebar",
     "onCommand:helloCigen.launch",
     "onCommand:helloCigen.start",
@@ -25,8 +26,8 @@
     "views": {
       "helloCigenContainer":[
         {
-          "id": "helloCigen.sessionSetup",
-          "name": "Session Setup",
+          "id": "helloCigen.initialSession",
+          "name": "Welcome",
           "type": "webview"
         }
       ]
