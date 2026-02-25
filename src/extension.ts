@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "./serverManager";
-import { createSessionLog, patchSessionLog } from "./utils/session_log_utils";
+import { createSessionLog } from "./utils/session_log_utils";
 
 
 import { ChatManager2 } from "./ui/chatManager2";
@@ -37,7 +37,6 @@ export function activate(context: vscode.ExtensionContext) {
       let projectDetails: any;
       try {
         await serverManager.startServer();
-        // // Now fetch project details
         projectDetails = await serverManager.httpFetch("/project_details");
         output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
       } catch (err) {
@@ -74,16 +73,10 @@ export function activate(context: vscode.ExtensionContext) {
         logPeers();
       });
 
-      // 4. Host-only: expose a test service
-      if (liveShare.session?.role === vsls.Role.Host) {
-        const svc = await liveShare.shareService("helloCigen.test");
-        if (!svc) return;
-        svc.onNotify("testNotify", (data: any) => {
-          console.log("Service notify:", data);
-        });
-      }
-      // After PEER TRACKING...
-      await new Promise(r => setTimeout(r, 30000)); // wait for peers
+      await vscode.window.showInformationMessage(
+        "Live Share session started. Click when all participants have joined.",
+        "Everyone is here"
+      );
 
       /* ---------------- CREATING AND MANAGING SESSION LOGS ---------------- */
       // Ask continue first
@@ -127,13 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
         sessionNumber 
       }, serverManager);
 
-      // Update after 1 min
-      await new Promise(r => setTimeout(r, 60000));
-      await patchSessionLog(sessionId, {
-        project_title: "changed just for testing purpose after 1 min",
-        updated_at: new Date().toISOString()
-      }, serverManager);
-      output.appendLine(`Updated session ${sessionNumber}`);
+      output.appendLine(`Session ${sessionNumber} created successfully.`);
     }
   );
 

@@ -1,6 +1,7 @@
 // chatmanager2.ts
 import * as vscode from 'vscode';
 import { OpenAI } from 'openai';
+import { ServerManager } from '../serverManager';
 
 export class ChatManager2 {
   private panel: vscode.WebviewPanel | undefined;
@@ -12,7 +13,7 @@ export class ChatManager2 {
   private selectedProject: string | null = null;
   private options: Record<string, boolean> = {};
 
-  constructor(private context: vscode.ExtensionContext, private serverManager: any) {}
+  constructor(private context: vscode.ExtensionContext, private serverManager: ServerManager) {}
 
   async openChat() {
     const apiKey = await this.getApiKey();

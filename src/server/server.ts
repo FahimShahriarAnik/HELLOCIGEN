@@ -10,6 +10,10 @@ import type { Request, Response } from "express";
 const app = express();
 app.use(express.json()); // Middleware to parse JSON bodies
 
+app.get("/health", (_req: Request, res: Response) => {
+  res.sendStatus(200);
+});
+
 // 1) Upsert (store/rewrite) the single static project config
 // Reads the full static config JSON from req.body.
 // Calls getProjectConfigCollection() to get a collection handle.

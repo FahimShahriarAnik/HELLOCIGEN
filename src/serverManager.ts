@@ -51,8 +51,8 @@ export class ServerManager {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       try {
-        const resp = await fetch(`${SERVER_URL}/sessions/test`); // Use a non-existent route; 404 means server is up
-        if (resp.status === 404) {
+        const resp = await fetch(`${SERVER_URL}/health`);
+        if (resp.ok) {
           serverReady = true;
           output.appendLine("Server is ready!");
           return;

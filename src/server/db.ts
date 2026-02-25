@@ -8,7 +8,6 @@ import { MONGO_URI } from "../utils/config.local";
 
 const uri = MONGO_URI;
 
-//const uri = process.env.MONGO_URI ?? "mongodb://localhost:27017";
 const dbName = "session_logs";
 
 // Module-level variables
