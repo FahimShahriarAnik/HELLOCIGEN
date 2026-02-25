@@ -68,12 +68,12 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       border-radius: 10px;
       padding: 16px;
       background: var(--vscode-editorWidget-background);
+      margin-bottom: 12px;
     }
-    .actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 12px;
+    .section-title {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      font-weight: 700;
     }
     .form-row {
       display: grid;
@@ -111,8 +111,6 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       width: 100%;
       margin-top: 10px;
     }
-    .view { display: none; }
-    .view.active { display: block; }
     .hint {
       margin-top: 10px;
       font-size: 12px;
@@ -135,10 +133,6 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
     .session-item:hover {
       border-color: var(--vscode-focusBorder);
     }
-    .back {
-      margin-top: 14px;
-      width: 100%;
-    }
     .status {
       margin-top: 8px;
       font-size: 12px;
@@ -148,51 +142,29 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
 </head>
 <body>
   <div class="container">
-    <!-- This block is the simple choice screen that kicks off the flow. -->
-    <div id="initialView" class="view active">
-      <h2>HELLOCIGEN</h2>
-      <div class="card">
-        <p>Do you want to continue a previous session?</p>
-        <div class="actions">
-          <button id="yesBtn">Yes</button>
-          <button id="noBtn" class="secondary">No</button>
-        </div>
-      </div>
+    <h2>HELLOCIGEN</h2>
+    <p>Resume an existing session or start a new one.</p>
+
+    <div class="card">
+      <h3 class="section-title">Existing Sessions</h3>
+      <div id="sessionsList" class="list"></div>
+      <div id="sessionsEmpty" class="hint">Loading sessions...</div>
+      <div id="sessionsStatus" class="status"></div>
     </div>
 
-    <!-- This block lists prior sessions so the user can resume one. -->
-    <div id="yesView" class="view">
-      <h2>HELLOCIGEN</h2>
-      <div class="card">
-        <p>Continue previous session</p>
-        <div id="sessionsList" class="list"></div>
-        <div id="sessionsEmpty" class="hint">Loading sessions...</div>
-        <div id="sessionsStatus" class="status"></div>
-        <button id="backFromYes" class="secondary back">Back</button>
-      </div>
-    </div>
-
-    <!-- This block starts a brand-new session with a participant count. -->
-    <div id="noView" class="view">
-      <h2>HELLOCIGEN</h2>
-      <div class="card">
-        <p>Start a new session</p>
-        <div class="form-row">
-          <label for="participantCount">Number of participants</label>
-          <input id="participantCount" type="number" min="1" max="100" value="2" />
-          <button id="startSessionBtn" class="full">Start Session</button>
-          <div id="startStatus" class="status"></div>
-        </div>
-        <button id="backFromNo" class="secondary back">Back</button>
+    <div class="card">
+      <h3 class="section-title">Start New Session</h3>
+      <div class="form-row">
+        <label for="participantCount">Number of participants</label>
+        <input id="participantCount" type="number" min="1" max="100" value="2" />
+        <button id="startSessionBtn" class="full">Start Session</button>
+        <div id="startStatus" class="status"></div>
       </div>
     </div>
   </div>
 
   <script>
     const vscode = acquireVsCodeApi();
-    const initialView = document.getElementById('initialView');
-    const yesView = document.getElementById('yesView');
-    const noView = document.getElementById('noView');
     const sessionsList = document.getElementById('sessionsList');
     const sessionsEmpty = document.getElementById('sessionsEmpty');
     const sessionsStatus = document.getElementById('sessionsStatus');
@@ -200,32 +172,8 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
     const startBtn = document.getElementById('startSessionBtn');
     const participantInput = document.getElementById('participantCount');
 
-    // This block swaps between the three small views without reloading.
-    function show(view) {
-      initialView.classList.remove('active');
-      yesView.classList.remove('active');
-      noView.classList.remove('active');
-      view.classList.add('active');
-    }
-
-    document.getElementById('yesBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'choose', choice: 'yes' });
-      show(yesView);
-      vscode.postMessage({ type: 'loadSessions' });
-    });
-
-    document.getElementById('noBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'choose', choice: 'no' });
-      show(noView);
-    });
-
-    document.getElementById('backFromYes').addEventListener('click', () => {
-      show(initialView);
-    });
-
-    document.getElementById('backFromNo').addEventListener('click', () => {
-      show(initialView);
-    });
+    // Load previous sessions when the view opens.
+    vscode.postMessage({ type: 'loadSessions' });
 
     // This block wires the "start session" button to the extension host.
     startBtn.addEventListener('click', () => {
