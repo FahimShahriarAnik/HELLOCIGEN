@@ -7,12 +7,12 @@ import { createSessionLog, patchSessionLog } from "./utils/session_log_utils";
 
 
 import { ChatManager } from "./ui/chatManager";
+import { ChatManager2 } from "./ui/chatManager2";
 import { InitialSessionView } from "./ui/initialSessionView";
 // import { SessionSetupView } from "./ui/sessionSetupView";
 import { HelloCigenSidebarViewProvider } from "./ui/sidebarView";
 
 export function activate(context: vscode.ExtensionContext) {
-
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
   output.show(true);
 
@@ -134,6 +134,8 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  ///////////////////////////////////////////// need to check whether disposable arrow function req or not /////////////////////////////////////////////
+  ////////////////// So it exists and works when manually invoked, but it's not running by default—users need to explicitly call it via the command palette.
   const disposable = vscode.commands.registerCommand(
     "helloCigen.start",
     async () => {
@@ -249,11 +251,21 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  const openChatCmd = vscode.commands.registerCommand(
-    "helloCigen.openChat", () => {
-      chatManager.openChat();
+  // Add this command registration
+  const openChat2Cmd = vscode.commands.registerCommand(
+    "helloCigen.openChat",
+    () => {
+      const chatManager2 = new ChatManager2(context, serverManager);
+      chatManager2.openChat();
     }
   );
+
+
+  // const openChatCmd = vscode.commands.registerCommand(
+  //   "helloCigen.openChat", () => {
+  //     chatManager.openChat();
+  //   }
+  // );
 
   const setApiKeyCmd = vscode.commands.registerCommand(
     "helloCigen.setApiKey",
@@ -294,7 +306,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // context.subscriptions.push(launchCmd);
   context.subscriptions.push(disposable);
-  context.subscriptions.push(openChatCmd);
+  //context.subscriptions.push(openChatCmd);
+  context.subscriptions.push(openChat2Cmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
   context.subscriptions.push(sendActiveFileCmd);
