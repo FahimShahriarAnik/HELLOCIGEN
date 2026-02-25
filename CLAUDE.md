@@ -1,5 +1,11 @@
 # HelloCigen — CLAUDE.md
 
+## Behavior and Style Guidelines
+- **Be extremely concise:** Always provide the shortest possible answer that is still accurate.
+- **Minimize output size:** Only show changed code blocks (diffs) rather than full files.
+- **No conversational filler:** Skip greetings, pleasantries, and unnecessary explanations.
+- **Bullet points:** Default to 3-5 bullet points for summaries.
+
 ## Project Overview
 
 **HelloCigen** is a VS Code extension that integrates collaborative AI-powered code generation with VS Live Share. It helps development teams:

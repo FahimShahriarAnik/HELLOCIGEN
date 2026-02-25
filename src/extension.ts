@@ -1,73 +1,18 @@
-import { log } from "console";
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "./serverManager";
-import { roleToString, accessToString } from "./utils/liveshareHelpers";
 import { createSessionLog, patchSessionLog } from "./utils/session_log_utils";
 
 
-import { ChatManager } from "./ui/chatManager";
 import { ChatManager2 } from "./ui/chatManager2";
 import { InitialSessionView } from "./ui/initialSessionView";
-// import { SessionSetupView } from "./ui/sessionSetupView";
-import { HelloCigenSidebarViewProvider } from "./ui/sidebarView";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
   output.show(true);
 
-  const chatManager = new ChatManager(context);
-
-  let trackingRegistered = false;
-  const registerLiveShareTracking = (liveShare: vsls.LiveShare) => {
-    if (trackingRegistered) return;
-    trackingRegistered = true;
-
-    output.show(true);
-
-    const logSession = () => {
-      const s = liveShare.session;
-      if (!s) return;
-      output.appendLine(
-        `Session ID: ${s.id} | Role: ${s.role} | Access: ${s.access}`
-      );
-    };
-
-    const logPeers = () => {
-      output.appendLine(`Peers count: ${liveShare.peers.length}`);
-      liveShare.peers.forEach(p => {
-        output.appendLine(
-          `Peer ${p.peerNumber} | Role: ${p.role} | Access: ${p.access}`
-        );
-      });
-    };
-
-    logSession();
-    liveShare.onDidChangeSession(() => {
-      output.appendLine("onDidChangeSession fired");
-      logSession();
-    });
-
-    logPeers();
-    liveShare.onDidChangePeers(() => {
-      output.appendLine("onDidChangePeers fired");
-      logPeers();
-    });
-  };
-
-  const sidebarProvider = new HelloCigenSidebarViewProvider(
-    context,
-    chatManager
-  );
-
   const initialSessionProvider = new InitialSessionView();
-
-  // context.subscriptions.push(
-  //   vscode.window.registerWebviewViewProvider(
-  //     HelloCigenSidebarViewProvider.viewId,
-  //     sidebarProvider
-  //   )
-  // );
+  const chatManager2 = new ChatManager2(context, serverManager);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -76,66 +21,6 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  /*
-  // Setup SessionSetupView
-  const sessionSetupProvider = new SessionSetupView(
-    context,
-    async (participantCount) => {
-      output.appendLine(`Session started with ${participantCount} participants`);
-      try {
-        await serverManager.startServer();
-        const projectDetails = await serverManager.httpFetch("/project_details");
-        output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
-        return projectDetails.projects ?? [];
-      } catch (err) {
-        output.appendLine(`Server error: ${err}`);
-        return [];
-      }
-    },
-    async (project) => {
-      // Called when user selects a project
-      output.appendLine(`Project selected: ${project.title || project.project_id}`);
-      // Store selected project in global state
-      await context.globalState.update("helloCigen.selectedProject", project);
-      // Update sidebar to reflect the selected project
-      sidebarProvider.updateSelectedProject(project);
-      // Start or attach to Live Share session and register tracking
-      const liveShare = await vsls.getApi();
-      if (!liveShare) {
-        vscode.window.showErrorMessage("Live Share API not available.");
-      } else {
-        await liveShare.share();
-        registerLiveShareTracking(liveShare);
-      }
-      // Open the chat
-      await chatManager.openChat();
-    }
-  );
-
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      "helloCigen.sessionSetup",
-      sessionSetupProvider
-    )
-  );
-  */
-
-  // const launchCmd = vscode.commands.registerCommand(
-  //   "helloCigen.launch",
-  //   async () => {
-  //     await sidebarProvider.launch();
-  //   }
-  // );
-
-  const joinSessionCmd = vscode.commands.registerCommand(
-    "helloCigen.join",
-    () => {
-      vscode.window.showInformationMessage("Join session command executed.");
-    }
-  );
-
-  ///////////////////////////////////////////// need to check whether disposable arrow function req or not /////////////////////////////////////////////
-  ////////////////// So it exists and works when manually invoked, but it's not running by default—users need to explicitly call it via the command palette.
   const disposable = vscode.commands.registerCommand(
     "helloCigen.start",
     async () => {
@@ -252,21 +137,12 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  // Add this command registration
   const openChat2Cmd = vscode.commands.registerCommand(
     "helloCigen.openChat",
     () => {
-      const chatManager2 = new ChatManager2(context, serverManager);
       chatManager2.openChat();
     }
   );
-
-
-  // const openChatCmd = vscode.commands.registerCommand(
-  //   "helloCigen.openChat", () => {
-  //     chatManager.openChat();
-  //   }
-  // );
 
   const setApiKeyCmd = vscode.commands.registerCommand(
     "helloCigen.setApiKey",
@@ -298,16 +174,14 @@ export function activate(context: vscode.ExtensionContext) {
     "helloCigen.sendActiveFile",
     async () => {
       try {
-        await chatManager.sendActiveFile();
+        await chatManager2.sendActiveFile();
       } catch (err) {
         vscode.window.showErrorMessage(`Failed to send active file: ${err}`);
       }
     }
   );
 
-  // context.subscriptions.push(launchCmd);
   context.subscriptions.push(disposable);
-  //context.subscriptions.push(openChatCmd);
   context.subscriptions.push(openChat2Cmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
