@@ -13,7 +13,8 @@
     "onView:helloCigen.sidebar",
     "onCommand:helloCigen.launch",
     "onCommand:helloCigen.start",
-    "onCommand:helloCigen.openChat"
+    "onCommand:helloCigen.openChat",
+    "onCommand:helloCigen.openChat2"
   ],
   "contributes": {
     "viewsContainers": {
@@ -36,6 +37,10 @@
       {
         "command": "helloCigen.launch",
         "title": "HELLOCIGEN: Launch HelloCigen"
+      },
+      {
+        "command": "helloCigen.openChat2",
+        "title": "CIGEN: Open Project-Aware AI Chat"
       },
       {
         "command": "helloCigen.start",

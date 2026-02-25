@@ -19,6 +19,7 @@ export interface SessionLogDocument {
   _id: string;
   session_id: string;
   session_link?: string; // making it optional since it won't be required and hard to fetch from clipboard.
+  session_name?: string; // yet to reflect in existing log files and UI
   session_number: number;
   project_title: string;
   start_time: string;

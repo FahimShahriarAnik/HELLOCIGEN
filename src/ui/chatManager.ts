@@ -109,6 +109,13 @@ export class ChatManager {
   private async handleChatMessage(userMessage: string) {
     if (!this.panel || !this.openai) return;
 
+    const systemPrompt = `You are CIGEN assistant. Follow workspace context, be concise, and return actionable steps.`;
+    const taskPrompt = `Task: Generate a step-by-step refactor plan for the selected code, then provide exact code changes.`;
+
+    const messages: any[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'system', content: taskPrompt }
+    ];
     try {
       // If configured, include active file automatically
       if (this.options.includeActiveFile && this.fileContexts.length === 0) {
