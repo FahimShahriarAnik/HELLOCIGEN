@@ -139,6 +139,7 @@ export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
     "helloCigen.start",
     async () => {
+      output.show(true);
       const liveShare = await vsls.getApi();
       if (!liveShare) {
         vscode.window.showErrorMessage("Live Share API not available.");
