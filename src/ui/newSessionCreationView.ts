@@ -5,6 +5,7 @@ import { createSessionLog } from '../utils/session_log_utils';
 
 export class NewSessionCreationView {
   private static panel: vscode.WebviewPanel | undefined;
+  private static pollInterval: ReturnType<typeof setInterval> | undefined;
 
   static createOrShow(
     serverMgr: ServerManager,
@@ -27,8 +28,26 @@ export class NewSessionCreationView {
 
     this.panel.webview.html = this.getHtml(sessionName, participantCount, projects);
 
+    const pushJoinedCount = () => {
+      const joined = (liveShare.peers?.length ?? 0) + 1; // peers + host
+      this.panel?.webview.postMessage({ type: 'participantsJoined', count: joined });
+    };
+
+    pushJoinedCount();
+    this.pollInterval = setInterval(pushJoinedCount, 10_000);
+
     this.panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.type !== 'beginSession') return;
+
+      // Validate that all expected participants have joined before proceeding.
+      const joinedCount = (liveShare.peers?.length ?? 0) + 1;
+      if (joinedCount !== participantCount) {
+        this.panel?.webview.postMessage({
+          type: 'beginBlocked',
+          message: `Expected ${participantCount} participant(s), but only ${joinedCount} have joined. Please wait for everyone to join.`
+        });
+        return;
+      }
 
       const selectedProject = projects.find(p => p.project_id === msg.projectId);
       if (!selectedProject) return;
@@ -55,6 +74,10 @@ export class NewSessionCreationView {
     });
 
     this.panel.onDidDispose(() => {
+      if (this.pollInterval) {
+        clearInterval(this.pollInterval);
+        this.pollInterval = undefined;
+      }
       this.panel = undefined;
     });
   }
@@ -159,6 +182,8 @@ export class NewSessionCreationView {
       Session: <strong>${sessionName || '—'}</strong>
       &nbsp;·&nbsp;
       Participants: <strong>${participantCount}</strong>
+      &nbsp;·&nbsp;
+      Participants Joined: <strong id="joinedCount">—</strong>
     </p>
   </div>
 
@@ -166,6 +191,7 @@ export class NewSessionCreationView {
   ${emptyState}
 
   <button id="beginBtn" disabled>Begin Session</button>
+  <div id="warningMsg" style="margin-top:8px;font-size:12px;color:var(--vscode-errorForeground);display:none;"></div>
 
   <script>
     const vscode = acquireVsCodeApi();
@@ -183,9 +209,23 @@ export class NewSessionCreationView {
 
     document.getElementById('beginBtn').addEventListener('click', () => {
       if (!selectedId) return;
+      document.getElementById('warningMsg').style.display = 'none';
       document.getElementById('beginBtn').disabled = true;
       document.getElementById('beginBtn').textContent = 'Creating session...';
       vscode.postMessage({ type: 'beginSession', projectId: selectedId });
+    });
+
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'participantsJoined') {
+        document.getElementById('joinedCount').textContent = event.data.count;
+      }
+      if (event.data?.type === 'beginBlocked') {
+        const warning = document.getElementById('warningMsg');
+        warning.textContent = event.data.message;
+        warning.style.display = '';
+        document.getElementById('beginBtn').disabled = false;
+        document.getElementById('beginBtn').textContent = 'Begin Session';
+      }
     });
   </script>
 </body>

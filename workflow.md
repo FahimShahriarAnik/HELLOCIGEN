@@ -8,18 +8,16 @@ Build a VS Code extension with an AI agent acting as project manager for a colla
 ## Key Components
 
 ### 1. Data Layer — MongoDB
-- Stores session logs as JSON documents
-- Session log = source of truth for all session-related data
-- Used to keep the task tracker updated in real time
+- Stores session logs as JSON documents (source of truth)
+- Drives the task tracker in real time
 
 ### 2. Logic Layer — extension.ts + AI Agent
 - AI agent acts as project manager
-- extension.ts needs updates to support this role
+- extension.ts registers commands and coordinates all components
 
 ### 3. UI Layer
 - **Right panel:** AI chat window
-- **Left panel:** Custom explorer + task tracker
-- Teammate is building the left panel; some UI already exists
+- **Left panel:** Custom explorer + task tracker (teammate building)
 
 ---
 
@@ -31,53 +29,38 @@ Build a VS Code extension with an AI agent acting as project manager for a colla
 
 ### Participants
 - Join via the VS Live Share link
-- Must be logged into GitHub in a browser to join with their GitHub username
+- Must be logged into GitHub in a browser
 
 ---
 
 ## Open / TBD
 - Full narrative workflow not yet complete — more details coming
 
+---
 
 ### Complete Workflow Part by Part
-#### initialSessionView — Built ✓
-- **Existing Sessions table** (5 columns): Project | Session Name | # | Last Updated | checkbox
-  - Data fetched from `GET /sessions` via MongoDB aggregation (latest session_number per session_id)
-  - Fields returned: `project_title`, `session_name`, `session_number`, `last_updated`, `session_id` (hidden)
-- **Resume Selected** button: reads the checked row's `session_id`, fetches full document from `GET /sessions/:session_id`
-- **Start New Session** card: participant count input + start button (unchanged)
 
-> **Future task:**
-1. `SessionLogDocument` output to **HelloCigen** Output channel is a placeholder; fetched doc will drive session state in future.
-2. Window is not moveable or resizeable.
-3. On resume, fetch existing doc, populate state, then prompt for session name to create a new doc.
+#### initialSessionView — Built ✓
+- **Existing Sessions table:** fetches from `GET /sessions`; columns: Project, Session Name, #, Last Updated, checkbox
+- **Resume Selected:** fetches full document from `GET /sessions/:session_id`
+- **Start New Session:** participant count input + start button
+
+> **Future tasks:**
+> 1. Fetched doc will drive session state (Output channel is a placeholder for now).
+> 2. On resume, populate state then prompt for session name to create a new doc.
 
 #### NewSessionCreationView — Built ✓
-Triggered after host clicks "Start Session" in `initialSessionView`.
+Triggered after host clicks "Start Session".
 
-**Flow:**
-- `initialSessionView.startSession()` calls `vsls.share()` → Live Share link is generated
-- Server starts, fetches `GET /project_details` → extracts `projects[]` from MongoDB `projectConfigs`
-- Opens `NewSessionCreationView` (new `WebviewPanel`) passing `sessionName`, `participantCount`, `projects`
+- Calls `vsls.share()`, starts server, fetches `projects[]` from MongoDB
+- Shows project cards grid with title, description, complexity badge
+- Header displays **Participants Joined** counter alongside the entered count; polls every 10 s (cleared on panel dispose)
+- "Begin Session" enabled only when a card is selected; validates `liveShare.peers.length + 1 === participantCount` before proceeding — shows inline error and blocks if mismatched
+- POSTs to `POST /sessions` → creates `SessionLogDocument`
 
-**UI (`src/ui/newSessionCreationView.ts`):**
-- Header shows session name + participant count
-- Project cards grid — each card shows `title`, `description`, complexity badge (green/yellow/red)
-- Clicking a card selects it (highlighted border)
-- "Begin Session" button enabled only when a card is selected
-
-**On "Begin Session":**
-- Reads `liveShare.session.id` as `sessionId`
-- Calls `createSessionLog({ sessionId, sessionName, firstProject: selectedProject, liveShare, sessionNumber: 1 })`
-- POSTs to `POST /sessions` → creates `SessionLogDocument` in MongoDB with `session_name` populated
-- Shows success notification → panel closes
-
-**Files changed:**
-- `src/ui/newSessionCreationView.ts` — created
-- `src/ui/initialSessionView.ts` — `startSession()` now fetches projects + opens `NewSessionCreationView`; accepts `context` in constructor
-- `src/utils/session_log_utils.ts` — added `sessionName?: string` to `CreateSessionParams`; `session_name` now stored in session log document
-- `src/extension.ts` — passes `context` to `InitialSessionView` constructor
-
-> **Future task:**
-> - On resume, fetch existing doc, populate state, then prompt for session name to create a new doc.
-> - Decide if `NewSessionCreationView` state needs to be reflected on participant machines via Live Share.
+> **Future tasks:**
+> - On resume, populate from existing doc then prompt for session name.
+> - Decide if view state needs to be reflected on participant machines.
+> - Highlight counter green/red depending on whether joined === expected.
+> - Auto-fire a VS Code toast when a peer joins using `liveShare.onDidChangePeers`.
+> - Consider auto-proceeding (with confirmation) once count matches.
