@@ -47,4 +47,9 @@ Build a VS Code extension with an AI agent acting as project manager for a colla
 - **Resume Selected** button: reads the checked row's `session_id`, fetches full document from `GET /sessions/:session_id`
 - **Start New Session** card: participant count input + start button (unchanged)
 
-> **Note:** On resume, the full `SessionLogDocument` is currently printed to the VS Code **HelloCigen** output channel for inspection. This is a placeholder — the fetched document will be used to drive the session state in a future step.
+> **Future task:**
+1. `SessionLogDocument` output to **HelloCigen** Output channel is a placeholder; fetched doc will drive session state in future.
+2. Window is not moveable or resizeable.
+3. On resume, fetch existing doc, populate state, then prompt for session name to create a new doc.
+
+#### NewSessionCreationView — In planning

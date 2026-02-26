@@ -17,11 +17,8 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (msg) => {
       if (!msg?.type) return;
-      if (msg.type === "choose") {
-        this.view?.webview.postMessage({ type: "selected", choice: msg.choice });
-      }
       if (msg.type === "startSession" && typeof msg.participantCount === "number") {
-        await this.startSession(msg.participantCount);
+        await this.startSession(msg.participantCount, msg.sessionName ?? "");
       }
       if (msg.type === "loadSessions") {
         await this.loadSessions();
@@ -142,7 +139,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
     <p>Resume an existing session or start a new one.</p>
 
     <div class="card">
-      <h3 class="section-title">Existing Sessions</h3>
+      <h3 class="section-title">Resume Existing Sessions</h3>
       <div id="sessionsEmpty" class="hint">Loading sessions...</div>
       <table id="sessionsTable" style="display:none">
         <thead>
@@ -152,13 +149,15 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
         </thead>
         <tbody id="sessionsList"></tbody>
       </table>
-      <button id="resumeBtn" class="full secondary" style="display:none">Resume Selected</button>
+      <button id="resumeBtn" class="full" style="display:none">Resume Selected</button>
       <div id="sessionsStatus" class="status"></div>
     </div>
 
     <div class="card">
       <h3 class="section-title">Start New Session</h3>
       <div class="form-row">
+        <label for="sessionName">Session name</label>
+        <input id="sessionName" type="text" placeholder="e.g. Sprint 3 – Day 1" />
         <label for="participantCount">Number of participants</label>
         <input id="participantCount" type="number" min="1" max="100" value="2" />
         <button id="startSessionBtn" class="full">Start Session</button>
@@ -177,6 +176,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
     const startStatus = document.getElementById('startStatus');
     const startBtn = document.getElementById('startSessionBtn');
     const participantInput = document.getElementById('participantCount');
+    const sessionNameInput = document.getElementById('sessionName');
 
     // Load previous sessions when the view opens.
     vscode.postMessage({ type: 'loadSessions' });
@@ -198,7 +198,8 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       startStatus.textContent = 'Starting Live Share...';
       startBtn.disabled = true;
       participantInput.disabled = true;
-      vscode.postMessage({ type: 'startSession', participantCount: count });
+      sessionNameInput.disabled = true;
+      vscode.postMessage({ type: 'startSession', participantCount: count, sessionName: sessionNameInput.value.trim() });
     });
 
     // This block renders previous sessions as a table so the user can resume.
@@ -245,7 +246,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
 </html>`;
   }
 
-  private async startSession(participantCount: number): Promise<void> {
+  private async startSession(participantCount: number, _sessionName: string): Promise<void> {
     // This block starts a Live Share session when the user clicks "Start Session".
     try {
       const liveShare = await vsls.getApi();
