@@ -11,7 +11,7 @@ export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
   output.show(true);
 
-  const initialSessionProvider = new InitialSessionView();
+  const initialSessionProvider = new InitialSessionView(context);
   const chatManager2 = new ChatManager2(context, serverManager);
 
   context.subscriptions.push(

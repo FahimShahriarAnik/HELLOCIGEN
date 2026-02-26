@@ -1,12 +1,15 @@
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "../serverManager";
+import { NewSessionCreationView } from "./newSessionCreationView";
 
 export class InitialSessionView implements vscode.WebviewViewProvider {
   public static readonly viewId = "helloCigen.initialSession";
 
   private view?: vscode.WebviewView;
   private output = vscode.window.createOutputChannel("HelloCigen");
+
+  constructor(private context: vscode.ExtensionContext) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -246,7 +249,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
 </html>`;
   }
 
-  private async startSession(participantCount: number, _sessionName: string): Promise<void> {
+  private async startSession(participantCount: number, sessionName: string): Promise<void> {
     // This block starts a Live Share session when the user clicks "Start Session".
     try {
       const liveShare = await vsls.getApi();
@@ -255,12 +258,15 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
         return;
       }
       await liveShare.share();
-      vscode.window.showInformationMessage(
-        `Live Share session started with ${participantCount} expected participants.`
-      );
-      this.postStartStatus(true, "Session started. You can now invite others.");
+      this.postStartStatus(true, "Session started. Loading projects...");
+
+      await serverManager.startServer();
+      const projectConfig = await serverManager.httpFetch("/project_details");
+      const projects = projectConfig?.projects ?? [];
+
+      NewSessionCreationView.createOrShow(serverManager, liveShare, sessionName, participantCount, projects);
     } catch (err) {
-      this.postStartStatus(false, `Failed to start Live Share: ${err}`);
+      this.postStartStatus(false, `Failed to start session: ${err}`);
     }
   }
 

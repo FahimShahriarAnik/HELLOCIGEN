@@ -3,6 +3,7 @@ import { roleToString, accessToString } from "./liveshareHelpers";
 
 export interface CreateSessionParams {
   sessionId: string;
+  sessionName?: string;
   firstProject: any;
   liveShare: any; // LiveShare type
   sessionNumber: number;
@@ -12,7 +13,7 @@ export async function createSessionLog(
   params: CreateSessionParams,
   serverManager: ServerManager
 ): Promise<void> {
-  const { sessionId, firstProject, liveShare, sessionNumber } = params;
+  const { sessionId, sessionName, firstProject, liveShare, sessionNumber } = params;
   
   const s = liveShare.session;
   if (!s) throw new Error("No LiveShare session");
@@ -33,6 +34,7 @@ export async function createSessionLog(
   
   const sessionLog = {
     session_id: sessionId,
+    session_name: sessionName ?? "",
     session_number: sessionNumber,
     project_title: firstProject.title,
     start_time: new Date().toISOString(),
