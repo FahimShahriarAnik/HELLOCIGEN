@@ -112,15 +112,27 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
   }
 });
 
-// This block gives the UI a simple list of session ids to resume.
+// This block gives the UI a list of sessions with name, number, and last_updated.
 app.get("/sessions", async (_req: Request, res: Response) => {
   try {
     const coll = await getSessionLogCollection();
-    const sessionIds = await coll.distinct("session_id");
-    res.json(sessionIds);
+    const docs = await coll.aggregate([
+      { $sort: { session_number: -1 } },
+      {
+        $group: {
+          _id: "$session_id",
+          session_id:     { $first: "$session_id" },
+          session_name:   { $first: "$session_name" },
+          session_number: { $first: "$session_number" },
+          last_updated:   { $first: "$last_updated" },
+          project_title:  { $first: "$project_title" },
+        }
+      }
+    ]).toArray();
+    res.json(docs);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "Failed to fetch session ids" });
+    res.status(500).json({ ok: false, error: "Failed to fetch sessions" });
   }
 });
 

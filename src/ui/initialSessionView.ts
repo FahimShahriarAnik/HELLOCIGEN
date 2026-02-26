@@ -6,6 +6,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
   public static readonly viewId = "helloCigen.initialSession";
 
   private view?: vscode.WebviewView;
+  private output = vscode.window.createOutputChannel("HelloCigen");
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -116,23 +117,18 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       font-size: 12px;
       opacity: 0.75;
     }
-    .list {
-      margin-top: 10px;
-      display: grid;
-      gap: 8px;
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+    th {
+      text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 600;
+      color: var(--vscode-descriptionForeground);
+      border-bottom: 1px solid var(--vscode-panel-border);
     }
-    .session-item {
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid var(--vscode-border-color);
-      background: var(--vscode-editorWidget-background);
-      cursor: pointer;
-      font-size: 12px;
-      word-break: break-word;
+    td {
+      padding: 6px 8px; color: var(--vscode-foreground);
+      border-bottom: 1px solid var(--vscode-panel-border); vertical-align: middle;
     }
-    .session-item:hover {
-      border-color: var(--vscode-focusBorder);
-    }
+    tr:hover td { background: var(--vscode-list-hoverBackground); }
+    td input[type="checkbox"] { cursor: pointer; }
     .status {
       margin-top: 8px;
       font-size: 12px;
@@ -147,8 +143,16 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
 
     <div class="card">
       <h3 class="section-title">Existing Sessions</h3>
-      <div id="sessionsList" class="list"></div>
       <div id="sessionsEmpty" class="hint">Loading sessions...</div>
+      <table id="sessionsTable" style="display:none">
+        <thead>
+          <tr>
+            <th>Project</th><th>Session Name</th><th>#</th><th>Last Updated</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sessionsList"></tbody>
+      </table>
+      <button id="resumeBtn" class="full secondary" style="display:none">Resume Selected</button>
       <div id="sessionsStatus" class="status"></div>
     </div>
 
@@ -166,14 +170,23 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
   <script>
     const vscode = acquireVsCodeApi();
     const sessionsList = document.getElementById('sessionsList');
+    const sessionsTable = document.getElementById('sessionsTable');
     const sessionsEmpty = document.getElementById('sessionsEmpty');
     const sessionsStatus = document.getElementById('sessionsStatus');
+    const resumeBtn = document.getElementById('resumeBtn');
     const startStatus = document.getElementById('startStatus');
     const startBtn = document.getElementById('startSessionBtn');
     const participantInput = document.getElementById('participantCount');
 
     // Load previous sessions when the view opens.
     vscode.postMessage({ type: 'loadSessions' });
+
+    resumeBtn.addEventListener('click', () => {
+      const checked = document.querySelector('.session-check:checked');
+      if (!checked) { sessionsStatus.textContent = 'Select a session first.'; return; }
+      sessionsStatus.textContent = 'Fetching session...';
+      vscode.postMessage({ type: 'resumeSession', sessionId: checked.dataset.sessionId });
+    });
 
     // This block wires the "start session" button to the extension host.
     startBtn.addEventListener('click', () => {
@@ -188,23 +201,27 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'startSession', participantCount: count });
     });
 
-    // This block renders previous sessions so the user can resume.
+    // This block renders previous sessions as a table so the user can resume.
     function renderSessions(sessions) {
       sessionsList.innerHTML = '';
       if (!sessions || sessions.length === 0) {
         sessionsEmpty.textContent = 'No previous sessions found.';
+        sessionsTable.style.display = 'none';
+        resumeBtn.style.display = 'none';
         return;
       }
       sessionsEmpty.textContent = '';
-      sessions.forEach((sessionId) => {
-        const item = document.createElement('button');
-        item.className = 'session-item';
-        item.textContent = sessionId;
-        item.addEventListener('click', () => {
-          sessionsStatus.textContent = 'Resuming session...';
-          vscode.postMessage({ type: 'resumeSession', sessionId });
-        });
-        sessionsList.appendChild(item);
+      sessionsTable.style.display = '';
+      resumeBtn.style.display = '';
+      sessions.forEach((s) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + (s.project_title  || '—') + '</td>' +
+          '<td>' + (s.session_name   || '—') + '</td>' +
+          '<td>' + (s.session_number != null ? s.session_number : '—') + '</td>' +
+          '<td>' + (s.last_updated   ? new Date(s.last_updated).toLocaleString() : '—') + '</td>' +
+          '<td><input type="checkbox" class="session-check" data-session-id="' + s.session_id + '"></td>';
+        sessionsList.appendChild(tr);
       });
     }
 
@@ -262,17 +279,21 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
   }
 
   private async resumeSession(sessionId: string): Promise<void> {
-    // This block hands the chosen session id to Live Share to rejoin it.
+    // Fetches the full session document and shows it in the output channel for inspection.
     try {
-      await vscode.commands.executeCommand("liveshare.join", sessionId);
+      const docs = await serverManager.httpFetch(`/sessions/${sessionId}`);
+      const latest = Array.isArray(docs) ? docs[docs.length - 1] : docs;
+      this.output.clear();
+      this.output.appendLine(JSON.stringify(latest, null, 2));
+      this.output.show();
       this.view?.webview.postMessage({
         type: "resumeStatus",
-        message: `Joining session ${sessionId}...`
+        message: "Document loaded in Output panel."
       });
     } catch (err) {
       this.view?.webview.postMessage({
         type: "resumeStatus",
-        message: `Failed to join session: ${err}`
+        message: `Failed to fetch session: ${err}`
       });
     }
   }

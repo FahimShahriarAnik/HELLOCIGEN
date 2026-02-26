@@ -37,6 +37,7 @@ export interface SessionLogDocument {
   session_number: number;
   project_title: string;
   start_time: string;
+  last_updated?: string;  // ISO string, updated whenever session log is patched
   no_of_participants: number;
   participants: Participant[];
   project_details: {
