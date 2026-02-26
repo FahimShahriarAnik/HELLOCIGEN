@@ -6,13 +6,27 @@ export interface FileTrackingEntry {
 }
 
 export interface Participant {
+  id: string;
   name: string;
   role: string;
-  joined_at: string;      // ISO string, or Date if you parse
   access_level: string;
-  file_tracking?: FileTrackingEntry[]; // optional. Some Participant objects may have file_tracking, others may omit it.
-  // future fields allowed:
-  [key: string]: unknown; // index signature. It tells TypeScript: “Besides the named fields (name, role, etc.), this object may also have other string‑named properties with values of type unknown.
+  joined_at: string;      // ISO string, or Date if you parse
+}
+
+type Status = "todo" | "doing" | "done";
+
+interface Task {
+  id: string;
+  title: string;
+  status: Status;
+  subtasks?: Task[];   // optional nested subtasks
+}
+
+interface Division {
+  id: string;
+  title: string;        // module / chunk name
+  owner_id: string;     // participant id reference
+  tasks: Task[];
 }
 
 export interface SessionLogDocument {
@@ -32,9 +46,7 @@ export interface SessionLogDocument {
     complexity: string;
     [key: string]: unknown;
   };
-  division_of_work: {
-    [name: string]: string;
-  };
+  division_of_work: Division[];
   // Allow extra top-level fields in the future
   // Ideas for more fields: end_time, summary, notes, etc.
   [key: string]: unknown;
