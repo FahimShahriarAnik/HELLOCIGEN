@@ -1,0 +1,244 @@
+import * as vscode from 'vscode';
+import { AiDivision } from '../utils/aiUtils';
+
+type Status = 'todo' | 'in progress' | 'done';
+
+interface TrackedTask {
+  id: string;
+  title: string;
+  status: Status;
+  subtasks?: TrackedTask[];
+}
+
+interface TrackedDivision {
+  id: string;
+  title: string;
+  owner_id: string;
+  tasks: TrackedTask[];
+}
+
+function nextStatus(s: Status): Status {
+  if (s === 'todo') return 'in progress';
+  if (s === 'in progress') return 'done';
+  return 'todo';
+}
+
+function divisionStatus(tasks: TrackedTask[]): Status {
+  if (tasks.length === 0) return 'todo';
+  if (tasks.every(t => t.status === 'done')) return 'done';
+  if (tasks.some(t => t.status === 'in progress' || t.status === 'done')) return 'in progress';
+  return 'todo';
+}
+
+export class TaskTrackerProvider implements vscode.WebviewViewProvider {
+  static readonly viewId = 'helloCigen.taskTracker';
+  static instance: TaskTrackerProvider | undefined;
+
+  private _view: vscode.WebviewView | undefined;
+  private _divisions: TrackedDivision[] = [];
+
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this._view = webviewView;
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.html = this._getHtml();
+
+    webviewView.webview.onDidReceiveMessage(msg => {
+      if (msg.type === 'toggleTask') {
+        this._toggleTask(msg.divisionId, msg.taskId, msg.subtaskId);
+      }
+      if (msg.type === 'toggleDivision') {
+        this._toggleDivision(msg.divisionId);
+      }
+    });
+  }
+
+  setDivisions(divisions: AiDivision[]): void {
+    this._divisions = divisions.map(d => ({
+      id: d.id,
+      title: d.title,
+      owner_id: (d as any).owner_id ?? '',
+      tasks: d.tasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        status: (t.status as Status) ?? 'todo',
+        subtasks: t.subtasks?.map(s => ({
+          id: s.id,
+          title: s.title,
+          status: (s.status as Status) ?? 'todo'
+        }))
+      }))
+    }));
+    this._refresh();
+  }
+
+  private _toggleTask(divisionId: string, taskId: string, subtaskId?: string): void {
+    const div = this._divisions.find(d => d.id === divisionId);
+    if (!div) return;
+    if (subtaskId) {
+      const task = div.tasks.find(t => t.id === taskId);
+      const sub = task?.subtasks?.find(s => s.id === subtaskId);
+      if (sub) sub.status = nextStatus(sub.status);
+      // propagate to parent task
+      if (task?.subtasks) {
+        task.status = divisionStatus(task.subtasks) as Status;
+      }
+    } else {
+      const task = div.tasks.find(t => t.id === taskId);
+      if (task) {
+        task.status = nextStatus(task.status);
+        // cascade to subtasks
+        task.subtasks?.forEach(s => { s.status = task.status; });
+      }
+    }
+    this._refresh();
+  }
+
+  private _toggleDivision(divisionId: string): void {
+    const div = this._divisions.find(d => d.id === divisionId);
+    if (!div) return;
+    const current = divisionStatus(div.tasks);
+    const next = nextStatus(current);
+    div.tasks.forEach(t => {
+      t.status = next;
+      t.subtasks?.forEach(s => { s.status = next; });
+    });
+    this._refresh();
+  }
+
+  private _refresh(): void {
+    if (this._view) {
+      this._view.webview.html = this._getHtml();
+    }
+  }
+
+  private _statusIcon(s: Status): string {
+    if (s === 'done') return '<span class="cb done">■</span>';
+    if (s === 'in progress') return '<span class="cb inprogress">◐</span>';
+    return '<span class="cb todo">□</span>';
+  }
+
+  private _getHtml(): string {
+    const divisionsHtml = this._divisions.length === 0
+      ? '<p class="empty">No tasks yet. Start a session to generate task divisions.</p>'
+      : this._divisions.map(div => {
+          const dStatus = divisionStatus(div.tasks);
+          const tasksHtml = div.tasks.map(task => {
+            const subsHtml = (task.subtasks && task.subtasks.length > 0)
+              ? task.subtasks.map(sub => `
+                  <div class="row subtask" data-div="${div.id}" data-task="${task.id}" data-sub="${sub.id}">
+                    ${this._statusIcon(sub.status)}
+                    <span class="label">${sub.title}</span>
+                  </div>`).join('')
+              : '';
+            return `
+              <div class="row task" data-div="${div.id}" data-task="${task.id}">
+                ${this._statusIcon(task.status)}
+                <span class="label">${task.title}</span>
+              </div>${subsHtml}`;
+          }).join('');
+
+          return `
+            <div class="division">
+              <div class="row division-header" data-div="${div.id}">
+                ${this._statusIcon(dStatus)}
+                <span class="label div-title">${div.title}</span>
+              </div>
+              <div class="tasks">${tasksHtml}</div>
+            </div>`;
+        }).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-sideBar-background);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .legend {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 6px 10px;
+      background: var(--vscode-sideBarSectionHeader-background);
+      border-bottom: 1px solid var(--vscode-panel-border);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    .legend-title { opacity: 0.7; font-weight: 600; margin-right: 4px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    .division { margin-bottom: 4px; }
+    .row {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+      border-radius: 3px;
+      line-height: 1.4;
+      user-select: none;
+    }
+    .row:hover { background: var(--vscode-list-hoverBackground); }
+    .division-header { padding-left: 10px; }
+    .task { padding-left: 24px; }
+    .subtask { padding-left: 40px; }
+    .cb {
+      font-size: 13px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .cb.todo { color: var(--vscode-foreground); opacity: 0.5; }
+    .cb.inprogress { color: #f0a500; }
+    .cb.done { color: #4caf50; }
+    .label { font-size: 12px; }
+    .div-title { font-weight: 600; font-size: 12px; }
+    .empty { padding: 16px 10px; font-size: 12px; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <div class="legend">
+    <span class="legend-title">Legend:</span>
+    <span class="legend-item"><span class="cb todo">□</span> To-do</span>
+    <span class="legend-item"><span class="cb inprogress">◐</span> In Progress</span>
+    <span class="legend-item"><span class="cb done">■</span> Done</span>
+  </div>
+  <div class="scroll-area">
+    ${divisionsHtml}
+  </div>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.querySelectorAll('.division-header').forEach(el => {
+      el.addEventListener('click', () => {
+        vscode.postMessage({ type: 'toggleDivision', divisionId: el.dataset.div });
+      });
+    });
+    document.querySelectorAll('.task').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'toggleTask', divisionId: el.dataset.div, taskId: el.dataset.task });
+      });
+    });
+    document.querySelectorAll('.subtask').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'toggleTask', divisionId: el.dataset.div, taskId: el.dataset.task, subtaskId: el.dataset.sub });
+      });
+    });
+  </script>
+</body>
+</html>`;
+  }
+}

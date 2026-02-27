@@ -74,9 +74,34 @@ Triggered after host clicks "Start Session".
 > - Consider auto-proceeding (with confirmation) once count matches.
 
 
-#### Development Window -- planning 
+#### DevelopmentView — Built ✓
+Triggered automatically after `NewSessionCreationView` creates the session log.
 
+- Calls OpenAI GPT-4 with project details + participant count → returns N divisions, maps `owner_id` by index
+- PATCHes `division_of_work` onto the existing session log; displays results in panel
+- If no API key set → session log created with empty `division_of_work: []`, warning shown
 
->**Known Issues:**
-API key host er manually input dite hoy. how to bypass it?
-Division of work API call took noticeable time. 5s
+> **Future tasks:**
+> - Show participant name alongside `owner_id` in division cards.
+> - Allow re-generating division of work from within the panel.
+> - Decide how session log changes are reflected on participant machines.
+
+> **Known Issues:**
+> - API key must be set manually by the host (`HELLOCIGEN: Set OpenAI API Key`).
+> - GPT-4 call takes ~5s — panel shows a loading message during wait.
+
+#### DevelopmentView — UI Layout — Built ✓
+Full VS Code development layout triggered after AI task division is generated.
+
+**Layout:** Left = Explorer + Task Tracker · Middle = editor · Right = AI Chat (`ViewColumn.Beside`)
+
+**Task Tracker (`taskTrackerProvider.ts`):**
+- Click cycles: `□ todo` → `◐ in progress` (amber) → `■ done` (green); legend pinned at top
+- 3 levels: Division → Task → Subtask (subtasks optional); division status derived from children
+- Task click cascades to subtasks; division click cycles all children
+- Fixed height, scrollable — dynamic across any number of teammates/tasks/subtasks
+
+> **Future tasks:**
+> - Persist task status changes back to MongoDB via `PATCH /sessions/:session_id`.
+> - Reflect status changes on participant machines in real time.
+> - Allow collapsing/expanding individual division sections.

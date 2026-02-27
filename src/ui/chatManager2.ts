@@ -4,6 +4,7 @@ import { OpenAI } from 'openai';
 import { ServerManager } from '../serverManager';
 
 export class ChatManager2 {
+  static instance: ChatManager2 | undefined;
   private panel: vscode.WebviewPanel | undefined;
   private openai: OpenAI | undefined;
   private apiKey: string | undefined;
@@ -13,7 +14,9 @@ export class ChatManager2 {
   private selectedProject: string | null = null;
   private options: Record<string, boolean> = {};
 
-  constructor(private context: vscode.ExtensionContext, private serverManager: ServerManager) {}
+  constructor(private context: vscode.ExtensionContext, private serverManager: ServerManager) {
+    ChatManager2.instance = this;
+  }
 
   async openChat() {
     const apiKey = await this.getApiKey();

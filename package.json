@@ -31,6 +31,13 @@
           "name": "Welcome",
           "type": "webview"
         }
+      ],
+      "explorer": [
+        {
+          "id": "helloCigen.taskTracker",
+          "name": "Task Tracker",
+          "type": "webview"
+        }
       ]
     },
     "commands": [

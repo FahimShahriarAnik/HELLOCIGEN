@@ -13,8 +13,7 @@ export interface Participant {
   joined_at: string;      // ISO string, or Date if you parse
 }
 
-type Status = "todo" | "doing" | "done";
-
+type Status = "todo" | "in progress" | "done";
 interface Task {
   id: string;
   title: string;

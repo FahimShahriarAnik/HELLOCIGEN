@@ -6,6 +6,7 @@ import { createSessionLog } from "./utils/session_log_utils";
 
 import { ChatManager2 } from "./ui/chatManager2";
 import { InitialSessionView } from "./ui/initialSessionView";
+import { TaskTrackerProvider } from "./ui/taskTrackerProvider";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
@@ -13,11 +14,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   const initialSessionProvider = new InitialSessionView(context);
   const chatManager2 = new ChatManager2(context, serverManager);
+  const taskTrackerProvider = new TaskTrackerProvider();
+  TaskTrackerProvider.instance = taskTrackerProvider;
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       InitialSessionView.viewId,
       initialSessionProvider
+    ),
+    vscode.window.registerWebviewViewProvider(
+      TaskTrackerProvider.viewId,
+      taskTrackerProvider
     )
   );
 
