@@ -19,19 +19,21 @@ export async function createSessionLog(
   if (!s) throw new Error("No LiveShare session");
   
   const hostParticipant = {
+    id: 'u1',
     name: "Host",
     role: roleToString(s.role),
     joined_at: new Date().toISOString(),
     access_level: accessToString(s.access)
   };
-  
-  const allParticipants = [hostParticipant, ...liveShare.peers.map((p: any) => ({
+
+  const allParticipants = [hostParticipant, ...liveShare.peers.map((p: any, idx: number) => ({
+    id: `u${idx + 2}`,
     name: `Peer${p.peerNumber}`,
     role: roleToString(p.role),
     joined_at: new Date().toISOString(),
     access_level: accessToString(p.access)
   }))];
-  
+
   const sessionLog = {
     session_id: sessionId,
     session_name: sessionName ?? "",
@@ -41,7 +43,7 @@ export async function createSessionLog(
     no_of_participants: allParticipants.length,
     participants: allParticipants,
     project_details: firstProject,
-    division_of_work: {}
+    division_of_work: []
   };
   
   await serverManager.httpFetch("/sessions", {

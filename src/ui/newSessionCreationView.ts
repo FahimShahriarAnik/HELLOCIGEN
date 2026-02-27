@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
 import { createSessionLog } from '../utils/session_log_utils';
+import { DevelopmentView } from './developmentView';
 
 export class NewSessionCreationView {
   private static panel: vscode.WebviewPanel | undefined;
@@ -12,7 +13,8 @@ export class NewSessionCreationView {
     liveShare: any,
     sessionName: string,
     participantCount: number,
-    projects: Project[]
+    projects: Project[],
+    context: vscode.ExtensionContext
   ): void {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
@@ -66,8 +68,8 @@ export class NewSessionCreationView {
           liveShare,
           sessionNumber: 1
         }, serverMgr);
-        vscode.window.showInformationMessage(`Session "${sessionName || 'Untitled'}" created successfully!`);
         this.panel?.dispose();
+        DevelopmentView.createOrShow(sessionId, selectedProject, participantCount, serverMgr, context);
       } catch (err) {
         vscode.window.showErrorMessage(`Failed to create session log: ${err}`);
       }

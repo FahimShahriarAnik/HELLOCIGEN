@@ -1,0 +1,57 @@
+import { OpenAI } from 'openai';
+
+export interface AiDivision {
+  id: string;
+  title: string;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: 'todo' | 'doing' | 'done';
+    subtasks?: Array<{ id: string; title: string; status: 'todo' | 'doing' | 'done' }>;
+  }>;
+}
+
+export async function generateDivisionOfWork(
+  project: any,
+  participantCount: number,
+  apiKey: string
+): Promise<AiDivision[]> {
+  const openai = new OpenAI({ apiKey });
+
+  const systemPrompt = `You are CoGEN, a collaborative Generative AI agent for software engineering teams. You are acting as a Project Manager.
+    You are tasked with managing the whole Software development life cycle, Including planning, division of labor, overview of project completion, and keeping track of progress as well as each member's contribution.
+    Be concise, actionable, and engineer-focused. Analyze projects holistically considering architecture, dependencies, testing, and deployment.`;
+
+  const taskPrompt = `Project: "${project.title}". Full details: ${JSON.stringify(project, null, 2)}.
+
+Divide this project into EXACTLY ${participantCount} independent, parallel-developable divisions, one per developer. Each division must:
+- Be self-contained with minimal cross-dependencies
+- Include specific files/modules to own
+- Define clear interfaces/APIs for integration
+- Cover frontend/backend/testing/deployment aspects balanced
+- Have 2-4 concrete tasks
+
+Output ONLY a valid JSON array (no markdown, no extra text). Example format:
+[
+  {
+    "id": "d1",
+    "title": "Division Name",
+    "tasks": [
+      {"id": "t1", "title": "Task description", "status": "todo"},
+      {"id": "t2", "title": "Another task", "status": "todo"}
+    ]
+  }
+]`;
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: taskPrompt }
+    ],
+    max_tokens: 1500
+  });
+
+  const content = response.choices[0].message.content || '[]';
+  return JSON.parse(content) as AiDivision[];
+}

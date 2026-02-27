@@ -264,7 +264,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       const projectConfig = await serverManager.httpFetch("/project_details");
       const projects = projectConfig?.projects ?? [];
 
-      NewSessionCreationView.createOrShow(serverManager, liveShare, sessionName, participantCount, projects);
+      NewSessionCreationView.createOrShow(serverManager, liveShare, sessionName, participantCount, projects, this.context);
     } catch (err) {
       this.postStartStatus(false, `Failed to start session: ${err}`);
     }

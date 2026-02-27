@@ -38,6 +38,12 @@ Build a VS Code extension with an AI agent acting as project manager for a colla
 
 ---
 
+---
+## Key blockers
+1. Need to figure out how concurrency will be maintained
+2. How the API key will be shared? Considering security and convenience.
+3. How does change in log file reflected in all particpants machine. (Most important)
+---
 ### Complete Workflow Part by Part
 
 #### initialSessionView — Built ✓
@@ -48,6 +54,7 @@ Build a VS Code extension with an AI agent acting as project manager for a colla
 > **Future tasks:**
 > 1. Fetched doc will drive session state (Output channel is a placeholder for now).
 > 2. On resume, populate state then prompt for session name to create a new doc.
+3. Session list should be scrollable within a fixed window.
 
 #### NewSessionCreationView — Built ✓
 Triggered after host clicks "Start Session".
@@ -59,8 +66,17 @@ Triggered after host clicks "Start Session".
 - POSTs to `POST /sessions` → creates `SessionLogDocument`
 
 > **Future tasks:**
+> - Close the initialSessionView
 > - On resume, populate from existing doc then prompt for session name.
 > - Decide if view state needs to be reflected on participant machines.
 > - Highlight counter green/red depending on whether joined === expected.
 > - Auto-fire a VS Code toast when a peer joins using `liveShare.onDidChangePeers`.
 > - Consider auto-proceeding (with confirmation) once count matches.
+
+
+#### Development Window -- planning 
+
+
+>**Known Issues:**
+API key host er manually input dite hoy. how to bypass it?
+Division of work API call took noticeable time. 5s
