@@ -27,7 +27,7 @@ Build a VS Code extension with an AI agent acting as project manager for a colla
 - Triggers session start via `initialSessionView`
 - Creates VS Live Share link and shares it with teammates
 
-### Participants
+### teammates
 - Join via the VS Live Share link
 - Must be logged into GitHub in a browser
 
@@ -68,7 +68,7 @@ Triggered after host clicks "Start Session".
 > **Future tasks:**
 > - Close the initialSessionView
 > - On resume, populate from existing doc then prompt for session name.
-> - Decide if view state needs to be reflected on participant machines.
+> - Decide if view state needs to be reflected on teammate machines.
 > - Highlight counter green/red depending on whether joined === expected.
 > - Auto-fire a VS Code toast when a peer joins using `liveShare.onDidChangePeers`.
 > - Consider auto-proceeding (with confirmation) once count matches.
@@ -84,7 +84,7 @@ Triggered automatically after `NewSessionCreationView` creates the session log.
 > **Future tasks:**
 > - Show participant name alongside `owner_id` in division cards.
 > - Allow re-generating division of work from within the panel.
-> - Decide how session log changes are reflected on participant machines.
+> - Decide how session log changes are reflected on teammate machines.
 
 > **Known Issues:**
 > - API key must be set manually by the host (`HELLOCIGEN: Set OpenAI API Key`).
@@ -103,5 +103,26 @@ Full VS Code development layout triggered after AI task division is generated.
 
 > **Future tasks:**
 > - Persist task status changes back to MongoDB via `PATCH /sessions/:session_id`.
-> - Reflect status changes on participant machines in real time.
+> - Reflect status changes on teammate machines in real time.
 > - Allow collapsing/expanding individual division sections.
+
+
+Feedbacks:
+On the initialSessionView,
+1. Just show latest 5 and keep and option to load 5 more (prof suggested searching)
+2. Preserve can now check multiple checkboxes, only one should be allowed.
+On the NewSessionCreationView,
+1. Take input of hosts strength and weaknesses
+2. When teammates joins, their UI starts from the second window, they don't and shouldn't get initialSessionView.
+3. Teammates are asked to input their strength and weaknesses
+4. Only after participant confirms their strength and weaknesses, then they are registered and the teammate count on the new session creation view gets updated.
+5. Need to log the strength and weaknesses of all participants
+
+After "Begin Session" is pressed, Welcome popup should come up saying the task is being divided by AI in equal parts.
+Then the division of labor suggested by the AI should be presented in a task tracker format, but the host can change things around. 
+Host should be able to reassign tasks to different person. And for now this would only be available in host window. Later we can think of how to reflect this in teammates window.
+
+
+Immediate Next Step:
+First, test what happens if you fetch the vsix right now and try to run it on two machines. How much does it sync?
+Use a active session in the MongoDB cluster to fetch the information about live session And reflect that in UI.
