@@ -5,11 +5,15 @@ import { NewSessionCreationView } from "./newSessionCreationView";
 
 export class InitialSessionView implements vscode.WebviewViewProvider {
   public static readonly viewId = "helloCigen.initialSession";
+  public static instance: InitialSessionView | undefined;
 
   private view?: vscode.WebviewView;
   private output = vscode.window.createOutputChannel("HelloCigen");
+  private activeSession?: { projectTitle: string; participantCount: number | string };
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(private context: vscode.ExtensionContext) {
+    InitialSessionView.instance = this;
+  }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -25,9 +29,15 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       }
       if (msg.type === "loadSessions") {
         await this.loadSessions();
+        if (this.activeSession) {
+          this.showInProgress(this.activeSession.projectTitle, this.activeSession.participantCount);
+        }
       }
       if (msg.type === "resumeSession" && typeof msg.sessionId === "string") {
         await this.resumeSession(msg.sessionId);
+      }
+      if (msg.type === "openChat") {
+        vscode.commands.executeCommand("helloCigen.toggleChat");
       }
     });
 
@@ -128,7 +138,18 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       border-bottom: 1px solid var(--vscode-panel-border); vertical-align: middle;
     }
     tr:hover td { background: var(--vscode-list-hoverBackground); }
-    td input[type="checkbox"] { cursor: pointer; }
+    td input[type="radio"] { cursor: pointer; }
+    .info-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; font-size: 12px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .info-row:last-of-type { border-bottom: none; }
+    .info-label { font-weight: 600; opacity: 0.7; }
+    .green-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e; display: inline-block; flex-shrink: 0;
+    }
     .status {
       margin-top: 8px;
       font-size: 12px;
@@ -141,7 +162,23 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
     <h2>HELLOCIGEN</h2>
     <p>Resume an existing session or start a new one.</p>
 
-    <div class="card">
+    <div id="inProgressCard" class="card" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span class="green-dot"></span>
+        <h3 class="section-title" style="margin:0">Session in Progress</h3>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Project</span>
+        <span id="ipProject">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Participants</span>
+        <span id="ipParticipants">—</span>
+      </div>
+      <button id="toggleChatBtn" class="full">Open / Close Chat</button>
+    </div>
+
+    <div id="resumeCard" class="card">
       <h3 class="section-title">Resume Existing Sessions</h3>
       <div id="sessionsEmpty" class="hint">Loading sessions...</div>
       <table id="sessionsTable" style="display:none">
@@ -156,7 +193,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       <div id="sessionsStatus" class="status"></div>
     </div>
 
-    <div class="card">
+    <div id="startCard" class="card">
       <h3 class="section-title">Start New Session</h3>
       <div class="form-row">
         <label for="sessionName">Session name</label>
@@ -180,12 +217,19 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
     const startBtn = document.getElementById('startSessionBtn');
     const participantInput = document.getElementById('participantCount');
     const sessionNameInput = document.getElementById('sessionName');
+    const inProgressCard = document.getElementById('inProgressCard');
+    const resumeCard = document.getElementById('resumeCard');
+    const startCard = document.getElementById('startCard');
+
+    document.getElementById('toggleChatBtn').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openChat' });
+    });
 
     // Load previous sessions when the view opens.
     vscode.postMessage({ type: 'loadSessions' });
 
     resumeBtn.addEventListener('click', () => {
-      const checked = document.querySelector('.session-check:checked');
+      const checked = document.querySelector('input[name="session-select"]:checked');
       if (!checked) { sessionsStatus.textContent = 'Select a session first.'; return; }
       sessionsStatus.textContent = 'Fetching session...';
       vscode.postMessage({ type: 'resumeSession', sessionId: checked.dataset.sessionId });
@@ -224,7 +268,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
           '<td>' + (s.session_name   || '—') + '</td>' +
           '<td>' + (s.session_number != null ? s.session_number : '—') + '</td>' +
           '<td>' + (s.last_updated   ? new Date(s.last_updated).toLocaleString() : '—') + '</td>' +
-          '<td><input type="checkbox" class="session-check" data-session-id="' + s.session_id + '"></td>';
+          '<td><input type="radio" name="session-select" class="session-check" data-session-id="' + s.session_id + '"></td>';
         sessionsList.appendChild(tr);
       });
     }
@@ -242,6 +286,13 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       }
       if (event.data?.type === 'resumeStatus') {
         sessionsStatus.textContent = event.data.message || '';
+      }
+      if (event.data?.type === 'sessionInProgress') {
+        inProgressCard.style.display = '';
+        resumeCard.style.display = 'none';
+        startCard.style.display = 'none';
+        document.getElementById('ipProject').textContent = event.data.projectTitle || '—';
+        document.getElementById('ipParticipants').textContent = event.data.participantCount ?? '—';
       }
     });
   </script>
@@ -264,7 +315,9 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       const projectConfig = await serverManager.httpFetch("/project_details");
       const projects = projectConfig?.projects ?? [];
 
-      NewSessionCreationView.createOrShow(serverManager, liveShare, sessionName, participantCount, projects, this.context);
+      NewSessionCreationView.createOrShow(serverManager, liveShare, sessionName, participantCount, projects, this.context,
+        (projectTitle, count) => this.showInProgress(projectTitle, count)
+      );
     } catch (err) {
       this.postStartStatus(false, `Failed to start session: ${err}`);
     }
@@ -293,6 +346,7 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       this.output.clear();
       this.output.appendLine(JSON.stringify(latest, null, 2));
       this.output.show();
+      this.showInProgress(latest.project_title ?? '—', latest.no_of_participants ?? '—');
       this.view?.webview.postMessage({
         type: "resumeStatus",
         message: "Document loaded in Output panel."
@@ -303,6 +357,11 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
         message: `Failed to fetch session: ${err}`
       });
     }
+  }
+
+  public showInProgress(projectTitle: string, participantCount: number | string): void {
+    this.activeSession = { projectTitle, participantCount };
+    this.view?.webview.postMessage({ type: "sessionInProgress", projectTitle, participantCount });
   }
 
   private postStartStatus(ok: boolean, message: string): void {

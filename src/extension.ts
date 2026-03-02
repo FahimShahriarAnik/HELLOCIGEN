@@ -138,6 +138,13 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const toggleChatCmd = vscode.commands.registerCommand(
+    "helloCigen.toggleChat",
+    () => {
+      chatManager2.toggleChat();
+    }
+  );
+
   const setApiKeyCmd = vscode.commands.registerCommand(
     "helloCigen.setApiKey",
     async () => {
@@ -177,6 +184,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(disposable);
   context.subscriptions.push(openChat2Cmd);
+  context.subscriptions.push(toggleChatCmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
   context.subscriptions.push(sendActiveFileCmd);

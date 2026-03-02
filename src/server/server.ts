@@ -127,7 +127,9 @@ app.get("/sessions", async (_req: Request, res: Response) => {
           last_updated:   { $first: "$last_updated" },
           project_title:  { $first: "$project_title" },
         }
-      }
+      },
+      { $sort: { last_updated: -1 } },
+      { $limit: 5 }
     ]).toArray();
     res.json(docs);
   } catch (err) {

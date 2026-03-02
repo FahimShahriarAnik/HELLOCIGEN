@@ -14,7 +14,8 @@ export class NewSessionCreationView {
     sessionName: string,
     participantCount: number,
     projects: Project[],
-    context: vscode.ExtensionContext
+    context: vscode.ExtensionContext,
+    onSessionStarted?: (projectTitle: string, participantCount: number) => void
   ): void {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
@@ -70,6 +71,7 @@ export class NewSessionCreationView {
         }, serverMgr);
         this.panel?.dispose();
         DevelopmentView.createOrShow(sessionId, selectedProject, participantCount, serverMgr, context);
+        onSessionStarted?.(selectedProject.title, participantCount);
       } catch (err) {
         vscode.window.showErrorMessage(`Failed to create session log: ${err}`);
       }
