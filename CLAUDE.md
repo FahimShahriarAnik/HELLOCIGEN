@@ -5,6 +5,7 @@
 - **Minimize output size:** Only show changed code blocks (diffs) rather than full files.
 - **No conversational filler:** Skip greetings, pleasantries, and unnecessary explanations.
 - **Bullet points:** Default to 3-5 bullet points for summaries.
+- **Think about edge cases:** Always think about the implication of changes being made and point out at the start.
 
 ## Project Overview
 
