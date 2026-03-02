@@ -6,15 +6,18 @@ import { generateDivisionOfWork, AiDivision } from '../utils/aiUtils';
 import { TaskTrackerProvider } from './taskTrackerProvider';
 import { DevChatPanel } from './devChatPanel';
 
+type DivisionWithOwner = AiDivision & { owner_id: string };
+
 export class DevelopmentView {
   static createOrShow(
     sessionId: string,
     selectedProject: Project,
     participantCount: number,
     serverMgr: ServerManager,
-    context: vscode.ExtensionContext
+    context: vscode.ExtensionContext,
+    precomputedDivisions?: DivisionWithOwner[]
   ): void {
-    this.runAiDivision(sessionId, selectedProject, participantCount, serverMgr, context);
+    this.runAiDivision(sessionId, selectedProject, participantCount, serverMgr, context, precomputedDivisions);
   }
 
   private static async runAiDivision(
@@ -22,44 +25,55 @@ export class DevelopmentView {
     project: Project,
     participantCount: number,
     serverMgr: ServerManager,
-    context: vscode.ExtensionContext
+    context: vscode.ExtensionContext,
+    precomputedDivisions?: DivisionWithOwner[]
   ): Promise<void> {
     const apiKey = await context.secrets.get('openai-api-key');
-    if (!apiKey) {
-      vscode.window.showWarningMessage('No OpenAI API key set — division of work skipped.');
-      return;
+
+    let divisions: DivisionWithOwner[];
+
+    if (precomputedDivisions) {
+      // Divisions already confirmed and patched by DivisionReviewPanel — skip AI call
+      divisions = precomputedDivisions;
+    } else {
+      if (!apiKey) {
+        vscode.window.showWarningMessage('No OpenAI API key set — division of work skipped.');
+        return;
+      }
+
+      let computed: DivisionWithOwner[] | undefined;
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Generating task divisions for "${project.title}"...`,
+          cancellable: false
+        },
+        async () => {
+          try {
+            const rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey);
+            const participantIds = Array.from({ length: participantCount }, (_, i) => `u${i + 1}`);
+            computed = rawDivisions.map((d: AiDivision, i: number) => ({
+              ...d,
+              owner_id: participantIds[i] ?? `u${i + 1}`
+            }));
+            await patchSessionLog(sessionId, { division_of_work: computed }, serverMgr);
+          } catch (err) {
+            vscode.window.showWarningMessage(`AI division failed: ${err}`);
+          }
+        }
+      );
+
+      if (!computed) return;
+      divisions = computed;
     }
 
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Generating task divisions for "${project.title}"...`,
-        cancellable: false
-      },
-      async () => {
-        try {
-          const rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey);
+    // Populate task tracker and reveal it in the Explorer sidebar
+    TaskTrackerProvider.instance?.setDivisions(divisions);
+    await vscode.commands.executeCommand('helloCigen.taskTracker.focus');
 
-          const participantIds = Array.from({ length: participantCount }, (_, i) => `u${i + 1}`);
-          const divisions = rawDivisions.map((d: AiDivision, i: number) => ({
-            ...d,
-            owner_id: participantIds[i] ?? `u${i + 1}`
-          }));
+    // Open the AI chat panel to the right
+    DevChatPanel.openOrReveal(project, divisions, apiKey ?? '');
 
-          await patchSessionLog(sessionId, { division_of_work: divisions }, serverMgr);
-
-          // Populate task tracker and reveal it in the Explorer sidebar
-          TaskTrackerProvider.instance?.setDivisions(divisions);
-          await vscode.commands.executeCommand('helloCigen.taskTracker.focus');
-
-          // Open the AI chat panel to the right
-          DevChatPanel.openOrReveal(project, divisions, apiKey);
-
-          vscode.window.showInformationMessage('Session ready. Tasks loaded.');
-        } catch (err) {
-          vscode.window.showWarningMessage(`AI division failed: ${err}`);
-        }
-      }
-    );
+    vscode.window.showInformationMessage('Session ready. Tasks loaded.');
   }
 }

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
 import { createSessionLog } from '../utils/session_log_utils';
-import { DevelopmentView } from './developmentView';
+import { DivisionReviewPanel } from './divisionReviewPanel';
 
 export class NewSessionCreationView {
   private static panel: vscode.WebviewPanel | undefined;
@@ -70,7 +70,7 @@ export class NewSessionCreationView {
           sessionNumber: 1
         }, serverMgr);
         this.panel?.dispose();
-        DevelopmentView.createOrShow(sessionId, selectedProject, participantCount, serverMgr, context);
+        DivisionReviewPanel.createOrShow(sessionId, selectedProject, participantCount, serverMgr, context);
         onSessionStarted?.(selectedProject.title, participantCount);
       } catch (err) {
         vscode.window.showErrorMessage(`Failed to create session log: ${err}`);

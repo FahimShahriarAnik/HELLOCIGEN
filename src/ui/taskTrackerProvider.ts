@@ -36,6 +36,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
 
   private _view: vscode.WebviewView | undefined;
   private _divisions: TrackedDivision[] = [];
+  private _participants: Array<{ id: string; name: string }> = [];
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView;
@@ -49,7 +50,18 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       if (msg.type === 'toggleDivision') {
         this._toggleDivision(msg.divisionId);
       }
+      if (msg.type === 'reassignDivision') {
+        const div = this._divisions.find(d => d.id === msg.divisionId);
+        if (div) {
+          div.owner_id = msg.newOwnerId;
+          // TODO: persist to MongoDB (needs sessionId + serverMgr — future enhancement)
+        }
+      }
     });
+  }
+
+  setParticipants(participants: Array<{ id: string; name: string }>): void {
+    this._participants = participants;
   }
 
   setDivisions(divisions: AiDivision[]): void {
@@ -137,11 +149,23 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
               </div>${subsHtml}`;
           }).join('');
 
+          const ownerName = this._participants.find(p => p.id === div.owner_id)?.name ?? div.owner_id;
+          const assigneeHtml = this._participants.length > 0
+            ? `<select class="owner-select" data-div-id="${div.id}">
+                 ${this._participants.map(p =>
+                   `<option value="${p.id}"${p.id === div.owner_id ? ' selected' : ''}>${p.name}</option>`
+                 ).join('')}
+               </select>`
+            : `<span class="owner-badge">${ownerName}</span>`;
+
           return `
             <div class="division">
-              <div class="row division-header" data-div="${div.id}">
-                ${this._statusIcon(dStatus)}
-                <span class="label div-title">${div.title}</span>
+              <div class="div-header-row">
+                <div class="row division-header" data-div="${div.id}">
+                  ${this._statusIcon(dStatus)}
+                  <span class="label div-title">${div.title}</span>
+                </div>
+                <div class="owner-area">${assigneeHtml}</div>
               </div>
               <div class="tasks">${tasksHtml}</div>
             </div>`;
@@ -206,6 +230,21 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
     .label { font-size: 12px; }
     .div-title { font-weight: 600; font-size: 12px; }
     .empty { padding: 16px 10px; font-size: 12px; opacity: 0.6; }
+    .div-header-row { display: flex; align-items: center; justify-content: space-between; padding-right: 6px; }
+    .owner-area { flex-shrink: 0; }
+    .owner-select {
+      font-size: 10px;
+      font-family: var(--vscode-font-family);
+      background: var(--vscode-dropdown-background);
+      color: var(--vscode-dropdown-foreground);
+      border: 1px solid var(--vscode-dropdown-border);
+      border-radius: 3px;
+      padding: 1px 4px;
+      max-width: 80px;
+      cursor: pointer;
+    }
+    .owner-select:focus { outline: 1px solid var(--vscode-focusBorder); }
+    .owner-badge { font-size: 10px; opacity: 0.6; padding: 1px 4px; }
   </style>
 </head>
 <body>
@@ -235,6 +274,12 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       el.addEventListener('click', e => {
         e.stopPropagation();
         vscode.postMessage({ type: 'toggleTask', divisionId: el.dataset.div, taskId: el.dataset.task, subtaskId: el.dataset.sub });
+      });
+    });
+    document.querySelectorAll('.owner-select').forEach(sel => {
+      sel.addEventListener('change', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'reassignDivision', divisionId: sel.dataset.divId, newOwnerId: sel.value });
       });
     });
   </script>
