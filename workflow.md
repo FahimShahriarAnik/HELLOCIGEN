@@ -126,3 +126,24 @@ Host should be able to reassign tasks to different person. And for now this woul
 Immediate Next Step:
 First, test what happens if you fetch the vsix right now and try to run it on two machines. How much does it sync?
 Use a active session in the MongoDB cluster to fetch the information about live session And reflect that in UI.
+
+
+Data Flow Summary
+Host machine                            Guest machine
+──────────────────────────────────      ───────────────────────────────────
+initialSessionView → "Start Session"
+  → liveShare.share()                   (guest joins Live Share)
+  → NewSessionCreationView opens        onDidChangeSession fires
+    [Strengths / Weaknesses — TOP]      → GuestOnboardingView opens
+    [Project cards grid]                  [Strengths / Weaknesses form]
+    [Confirmed: 1/3]                      Guest fills & clicks "Confirm & Join"
+         ↑ polls /pending-participants  → POST /sessions/:id/pending-participants
+         Confirmed: 2/3  ←────────────── server stores guest data in memory
+    [Confirmed: 3/3]
+    Host clicks "Begin Session"
+  → POST /sessions (createSessionLog)
+      merges pending participant S&W
+      host S&W from form payload
+  → DevelopmentView
+      GPT-4 prompt includes all S&W
+      AI divides tasks (freely, S&W as context)

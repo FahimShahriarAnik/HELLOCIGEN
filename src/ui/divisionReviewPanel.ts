@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
 import { patchSessionLog } from '../utils/session_log_utils';
-import { generateDivisionOfWork, AiDivision } from '../utils/aiUtils';
+import { generateDivisionOfWork, AiDivision, ParticipantProfile } from '../utils/aiUtils';
 import { TaskTrackerProvider } from './taskTrackerProvider';
 import { DevelopmentView } from './developmentView';
 
@@ -67,9 +67,26 @@ export class DivisionReviewPanel {
       return;
     }
 
+    // Fetch participant profiles (with S&W) from the session log for AI context.
+    let participantProfiles: ParticipantProfile[] = [];
+    try {
+      const logs: any[] = await serverMgr.httpFetch(`/sessions/${sessionId}`);
+      const latest = logs[logs.length - 1];
+      if (latest?.participants) {
+        participantProfiles = (latest.participants as any[]).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          strengths: p.strengths,
+          weaknesses: p.weaknesses
+        }));
+      }
+    } catch {
+      // Non-critical — proceed without profiles
+    }
+
     let rawDivisions: AiDivision[];
     try {
-      rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey);
+      rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey, participantProfiles);
     } catch (err) {
       vscode.window.showWarningMessage(`AI division failed: ${err}`);
       panel.dispose();

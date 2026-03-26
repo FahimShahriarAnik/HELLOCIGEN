@@ -7,23 +7,27 @@ export interface CreateSessionParams {
   firstProject: any;
   liveShare: any; // LiveShare type
   sessionNumber: number;
+  hostStrengths?: string;
+  hostWeaknesses?: string;
 }
 
 export async function createSessionLog(
   params: CreateSessionParams,
   serverManager: ServerManager
 ): Promise<void> {
-  const { sessionId, sessionName, firstProject, liveShare, sessionNumber } = params;
-  
+  const { sessionId, sessionName, firstProject, liveShare, sessionNumber, hostStrengths, hostWeaknesses } = params;
+
   const s = liveShare.session;
   if (!s) throw new Error("No LiveShare session");
-  
+
   const hostParticipant = {
     id: 'u1',
     name: "Host",
     role: roleToString(s.role),
     joined_at: new Date().toISOString(),
-    access_level: accessToString(s.access)
+    access_level: accessToString(s.access),
+    strengths: hostStrengths ?? "",
+    weaknesses: hostWeaknesses ?? ""
   };
 
   const allParticipants = [hostParticipant, ...liveShare.peers.map((p: any, idx: number) => ({

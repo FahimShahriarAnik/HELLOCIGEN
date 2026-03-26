@@ -11,6 +11,8 @@ export interface Participant {
   role: string;
   access_level: string;
   joined_at: string;      // ISO string, or Date if you parse
+  strengths?: string;
+  weaknesses?: string;
 }
 
 type Status = "todo" | "in progress" | "done";

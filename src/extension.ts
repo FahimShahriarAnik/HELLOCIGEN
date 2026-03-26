@@ -2,11 +2,12 @@ import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "./serverManager";
 import { createSessionLog } from "./utils/session_log_utils";
-
+import { Role } from "./utils/liveshareHelpers";
 
 import { ChatManager2 } from "./ui/chatManager2";
 import { InitialSessionView } from "./ui/initialSessionView";
 import { TaskTrackerProvider } from "./ui/taskTrackerProvider";
+import { GuestOnboardingView } from "./ui/guestOnboardingView";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
@@ -27,6 +28,17 @@ export function activate(context: vscode.ExtensionContext) {
       taskTrackerProvider
     )
   );
+
+  // Auto-detect when this instance joins a Live Share session as a guest.
+  vsls.getApi().then(liveShare => {
+    if (!liveShare) return;
+    liveShare.onDidChangeSession(() => {
+      const session = liveShare.session;
+      if (session && session.role === Role.Guest) {
+        GuestOnboardingView.createOrShow(context, liveShare);
+      }
+    });
+  });
 
   const disposable = vscode.commands.registerCommand(
     "helloCigen.start",

@@ -30,23 +30,41 @@ export class NewSessionCreationView {
 
     this.panel.webview.html = this.getHtml(sessionName, participantCount, projects);
 
-    const pushJoinedCount = () => {
-      const joined = (liveShare.peers?.length ?? 0) + 1; // peers + host
-      this.panel?.webview.postMessage({ type: 'participantsJoined', count: joined });
+    const sessionId = liveShare.session?.id ?? '';
+
+    // Poll the server for confirmed guest count every 10s.
+    // Host always counts as 1; confirmed guests come from the pending-participants store.
+    const pushConfirmedCount = async () => {
+      try {
+        const data = await serverMgr.httpFetch(`/sessions/${sessionId}/pending-participants`);
+        const confirmed = (data?.count ?? 0) + 1; // guests confirmed + host
+        this.panel?.webview.postMessage({ type: 'participantsJoined', count: confirmed });
+      } catch {
+        // Server may not be ready yet; fall back to Live Share peer count
+        const fallback = (liveShare.peers?.length ?? 0) + 1;
+        this.panel?.webview.postMessage({ type: 'participantsJoined', count: fallback });
+      }
     };
 
-    pushJoinedCount();
-    this.pollInterval = setInterval(pushJoinedCount, 10_000);
+    pushConfirmedCount();
+    this.pollInterval = setInterval(pushConfirmedCount, 10_000);
 
     this.panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.type !== 'beginSession') return;
 
-      // Validate that all expected participants have joined before proceeding.
-      const joinedCount = (liveShare.peers?.length ?? 0) + 1;
-      if (joinedCount !== participantCount) {
+      // Validate confirmed count matches expected participant count.
+      let confirmedCount = 1;
+      try {
+        const data = await serverMgr.httpFetch(`/sessions/${sessionId}/pending-participants`);
+        confirmedCount = (data?.count ?? 0) + 1;
+      } catch {
+        confirmedCount = (liveShare.peers?.length ?? 0) + 1;
+      }
+
+      if (confirmedCount !== participantCount) {
         this.panel?.webview.postMessage({
           type: 'beginBlocked',
-          message: `Expected ${participantCount} participant(s), but only ${joinedCount} have joined. Please wait for everyone to join.`
+          message: `Expected ${participantCount} participant(s) to confirm their profile, but only ${confirmedCount} have done so. Please wait for everyone to submit.`
         });
         return;
       }
@@ -54,7 +72,6 @@ export class NewSessionCreationView {
       const selectedProject = projects.find(p => p.project_id === msg.projectId);
       if (!selectedProject) return;
 
-      const sessionId = liveShare.session?.id;
       if (!sessionId) {
         vscode.window.showErrorMessage('No active Live Share session found.');
         return;
@@ -66,7 +83,9 @@ export class NewSessionCreationView {
           sessionName,
           firstProject: selectedProject,
           liveShare,
-          sessionNumber: 1
+          sessionNumber: 1,
+          hostStrengths: msg.strengths,
+          hostWeaknesses: msg.weaknesses
         }, serverMgr);
         this.panel?.dispose();
         DivisionReviewPanel.createOrShow(sessionId, selectedProject, participantCount, serverMgr, context);
@@ -175,6 +194,50 @@ export class NewSessionCreationView {
       font-size: 13px;
     }
     #beginBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .profile-section {
+      margin-bottom: 28px;
+      padding: 20px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 10px;
+      background: var(--vscode-editorWidget-background);
+    }
+    .profile-section h3 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .profile-section .hint {
+      font-size: 12px;
+      opacity: 0.6;
+      margin-bottom: 16px;
+    }
+    .profile-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .profile-field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.7;
+      margin-bottom: 5px;
+    }
+    .profile-field textarea {
+      width: 100%;
+      min-height: 72px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--vscode-input-border);
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 12px;
+      resize: vertical;
+    }
+    .profile-field textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
   </style>
 </head>
 <body>
@@ -187,6 +250,21 @@ export class NewSessionCreationView {
       &nbsp;·&nbsp;
       Participants Joined: <strong id="joinedCount">—</strong>
     </p>
+  </div>
+
+  <div class="profile-section">
+    <h3>Your Profile</h3>
+    <p class="hint">Help CoGEN assign tasks that fit your skills.</p>
+    <div class="profile-row">
+      <div class="profile-field">
+        <label for="hostStrengths">Strengths</label>
+        <textarea id="hostStrengths" placeholder="e.g. React, REST APIs, testing..."></textarea>
+      </div>
+      <div class="profile-field">
+        <label for="hostWeaknesses">Areas to Improve</label>
+        <textarea id="hostWeaknesses" placeholder="e.g. DevOps, databases, CSS..."></textarea>
+      </div>
+    </div>
   </div>
 
   <div class="cards">${cards}</div>
@@ -211,10 +289,12 @@ export class NewSessionCreationView {
 
     document.getElementById('beginBtn').addEventListener('click', () => {
       if (!selectedId) return;
+      const strengths = document.getElementById('hostStrengths').value.trim();
+      const weaknesses = document.getElementById('hostWeaknesses').value.trim();
       document.getElementById('warningMsg').style.display = 'none';
       document.getElementById('beginBtn').disabled = true;
       document.getElementById('beginBtn').textContent = 'Creating session...';
-      vscode.postMessage({ type: 'beginSession', projectId: selectedId });
+      vscode.postMessage({ type: 'beginSession', projectId: selectedId, strengths, weaknesses });
     });
 
     window.addEventListener('message', (event) => {

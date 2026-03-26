@@ -11,10 +11,18 @@ export interface AiDivision {
   }>;
 }
 
+export interface ParticipantProfile {
+  id: string;
+  name: string;
+  strengths?: string;
+  weaknesses?: string;
+}
+
 export async function generateDivisionOfWork(
   project: any,
   participantCount: number,
-  apiKey: string
+  apiKey: string,
+  participants?: ParticipantProfile[]
 ): Promise<AiDivision[]> {
   const openai = new OpenAI({ apiKey });
 
@@ -22,7 +30,14 @@ export async function generateDivisionOfWork(
     You are tasked with managing the whole Software development life cycle, Including planning, division of labor, overview of project completion, and keeping track of progress as well as each member's contribution.
     Be concise, actionable, and engineer-focused. Analyze projects holistically considering architecture, dependencies, testing, and deployment.`;
 
-  const taskPrompt = `Project: "${project.title}". Full details: ${JSON.stringify(project, null, 2)}.
+  const profileContext = participants && participants.length > 0
+    ? `\n\nParticipant profiles (use as context only — let AI decide optimal task assignment):\n` +
+      participants.map(p =>
+        `- ${p.name}: Strengths: ${p.strengths || 'not specified'}. Weaknesses: ${p.weaknesses || 'not specified'}.`
+      ).join('\n')
+    : '';
+
+  const taskPrompt = `Project: "${project.title}". Full details: ${JSON.stringify(project, null, 2)}.${profileContext}
 
 Divide this project into EXACTLY ${participantCount} independent, parallel-developable divisions, one per developer. Each division must:
 - Be self-contained with minimal cross-dependencies

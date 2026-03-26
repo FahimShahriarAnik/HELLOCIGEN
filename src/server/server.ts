@@ -10,6 +10,15 @@ import type { Request, Response } from "express";
 const app = express();
 app.use(express.json()); // Middleware to parse JSON bodies
 
+// In-memory store for guest pending confirmations, keyed by liveShare session_id.
+// Cleared after session log is created via POST /sessions.
+interface PendingParticipant {
+  strengths: string;
+  weaknesses: string;
+  confirmedAt: string;
+}
+const pendingParticipants = new Map<string, PendingParticipant[]>();
+
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
 });
@@ -78,6 +87,20 @@ app.post("/sessions", async (req: Request, res: Response) => {
   try {
     const coll = await getSessionLogCollection();
     const body = req.body as SessionLogDocument;
+
+    // Merge pending guest S&W into guest participant entries (matched by join order).
+    const pending = pendingParticipants.get(body.session_id);
+    if (pending && pending.length > 0) {
+      let guestIdx = 0;
+      body.participants = body.participants.map(p => {
+        if (p.role !== "Host" && guestIdx < pending.length) {
+          const guestData = pending[guestIdx++];
+          return { ...p, strengths: guestData.strengths, weaknesses: guestData.weaknesses };
+        }
+        return p;
+      });
+      pendingParticipants.delete(body.session_id);
+    }
 
     const result = await coll.insertOne(body);
     res.status(201).json({ ok: true, id: result.insertedId });
@@ -163,6 +186,31 @@ app.get("/sessions/:session_id", async (req: Request, res: Response) => {
     console.error(err);
     res.status(500).json({ ok: false, error: "Failed to fetch session logs" });
   }
+});
+
+// POST /sessions/:liveShareSessionId/pending-participants
+// Called by guests after they submit their strengths/weaknesses form.
+app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
+  const { liveShareSessionId } = req.params;
+  const { strengths, weaknesses } = req.body as { strengths: string; weaknesses: string };
+
+  if (!strengths && !weaknesses) {
+    return res.status(400).json({ ok: false, error: "strengths and weaknesses are required" });
+  }
+
+  const existing = pendingParticipants.get(liveShareSessionId) ?? [];
+  existing.push({ strengths: strengths ?? "", weaknesses: weaknesses ?? "", confirmedAt: new Date().toISOString() });
+  pendingParticipants.set(liveShareSessionId, existing);
+
+  res.json({ ok: true, count: existing.length });
+});
+
+// GET /sessions/:liveShareSessionId/pending-participants
+// Polled by the host's NewSessionCreationView to get confirmed guest count.
+app.get("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
+  const { liveShareSessionId } = req.params;
+  const list = pendingParticipants.get(liveShareSessionId) ?? [];
+  res.json({ count: list.length, participants: list });
 });
 
 const port = process.env.PORT ?? 4000;
