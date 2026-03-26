@@ -191,7 +191,7 @@ app.get("/sessions/:session_id", async (req: Request, res: Response) => {
 // POST /sessions/:liveShareSessionId/pending-participants
 // Called by guests after they submit their strengths/weaknesses form.
 app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
-  const { liveShareSessionId } = req.params;
+  const liveShareSessionId = req.params.liveShareSessionId as string;
   const { strengths, weaknesses } = req.body as { strengths: string; weaknesses: string };
 
   if (!strengths && !weaknesses) {
@@ -208,7 +208,7 @@ app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, re
 // GET /sessions/:liveShareSessionId/pending-participants
 // Polled by the host's NewSessionCreationView to get confirmed guest count.
 app.get("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
-  const { liveShareSessionId } = req.params;
+  const liveShareSessionId = req.params.liveShareSessionId as string;
   const list = pendingParticipants.get(liveShareSessionId) ?? [];
   res.json({ count: list.length, participants: list });
 });
