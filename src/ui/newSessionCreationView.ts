@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
-import { createSessionLog } from '../utils/session_log_utils';
+import { beginSessionDividing } from '../utils/session_log_utils';
 import { DivisionReviewPanel } from './divisionReviewPanel';
 
 export class NewSessionCreationView {
@@ -78,19 +78,18 @@ export class NewSessionCreationView {
       }
 
       try {
-        await createSessionLog({
+        // PATCH the existing draft doc → transition to "dividing" with full participant data
+        await beginSessionDividing({
           sessionId,
-          sessionName,
-          firstProject: selectedProject,
+          project: selectedProject,
           liveShare,
-          sessionNumber: 1,
           hostStrengths: msg.strengths,
           hostWeaknesses: msg.weaknesses
         }, serverMgr);
         this.panel?.dispose();
         DivisionReviewPanel.createOrShow(sessionId, selectedProject, participantCount, serverMgr, context);
       } catch (err) {
-        vscode.window.showErrorMessage(`Failed to create session log: ${err}`);
+        vscode.window.showErrorMessage(`Failed to begin session: ${err}`);
       }
     });
 

@@ -95,34 +95,36 @@ app.get("/project_details", async (_req: Request, res: Response) => {
  */
 
 // 3) Create a new session log (new or continuation -> always a new document) (dynamic)
+// Supports both draft creation (status: "draft") and full creation (legacy flow).
 app.post("/sessions", async (req: Request, res: Response) => {
   try {
     const coll = await getSessionLogCollection();
     const body = req.body as SessionLogDocument;
 
-    // Merge pending guest S&W into guest participant entries.
-    // Match by peerNumber (stable per session), fall back to userId.
-    const pending = pendingParticipants.get(body.session_id);
-    if (pending && pending.size > 0) {
-      const pendingArray = [...pending.values()];
-      body.participants = body.participants.map(p => {
-        // Try matching by peerNumber first (stable key), then by userId
-        const match = pendingArray.find(pp =>
-          (pp.peerNumber !== undefined && (p as any).peerNumber !== undefined && pp.peerNumber === (p as any).peerNumber) ||
-          (pp.userId && pp.userId === p.id)
-        );
-        if (match) {
-          return { ...p, name: match.displayName || p.name, strengths: match.strengths, weaknesses: match.weaknesses };
-        }
-        return p;
-      });
-      pendingParticipants.delete(body.session_id);
+    // Only merge pending guest S&W for non-draft sessions (legacy full-creation flow).
+    if (body.status !== "draft") {
+      const pending = pendingParticipants.get(body.session_id);
+      if (pending && pending.size > 0) {
+        const pendingArray = [...pending.values()];
+        body.participants = body.participants.map(p => {
+          const match = pendingArray.find(pp =>
+            (pp.peerNumber !== undefined && (p as any).peerNumber !== undefined && pp.peerNumber === (p as any).peerNumber) ||
+            (pp.userId && pp.userId === p.id)
+          );
+          if (match) {
+            return { ...p, name: match.displayName || p.name, strengths: match.strengths, weaknesses: match.weaknesses };
+          }
+          return p;
+        });
+        pendingParticipants.delete(body.session_id);
+      }
     }
 
     const result = await coll.insertOne(body);
 
-    // Set in-memory session state to "dividing" so guests can poll for transitions
-    sessionStates.set(body.session_id, { status: "dividing" });
+    // Set in-memory session state matching the document status
+    const status = (body.status as SessionState["status"]) || "dividing";
+    sessionStates.set(body.session_id, { status });
 
     res.status(201).json({ ok: true, id: result.insertedId });
   } catch (err) {
@@ -144,6 +146,26 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, error: "No sessions found" });
     }
 
+    // When transitioning to "dividing", merge pending guest S&W into participants
+    if (update.status === "dividing" && update.participants) {
+      const pending = pendingParticipants.get(session_id);
+      if (pending && pending.size > 0) {
+        const pendingArray = [...pending.values()];
+        update.participants = (update.participants as any[]).map((p: any) => {
+          const match = pendingArray.find(pp =>
+            (pp.peerNumber !== undefined && p.peerNumber !== undefined && pp.peerNumber === p.peerNumber) ||
+            (pp.userId && pp.userId === p.id)
+          );
+          if (match) {
+            return { ...p, name: match.displayName || p.name, strengths: match.strengths, weaknesses: match.weaknesses };
+          }
+          return p;
+        });
+        pendingParticipants.delete(session_id);
+      }
+      sessionStates.set(session_id, { status: "dividing" });
+    }
+
     const result = await coll.updateOne(
       { session_id, session_number: latest[0].session_number },  // target latest
       { $set: update }
@@ -151,7 +173,7 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
 
     // If division_of_work was patched, transition state to "active" so guests detect it
     if (update.division_of_work) {
-      const participants = latest[0].participants?.map((p: any) => ({ id: p.id, name: p.name })) ?? [];
+      const participants = (update.participants as any[] || latest[0].participants)?.map((p: any) => ({ id: p.id, name: p.name })) ?? [];
       sessionStates.set(session_id, {
         status: "active",
         division_of_work: update.division_of_work as Division[],
@@ -233,38 +255,47 @@ app.get("/sessions/:liveShareSessionId/state", (req: Request, res: Response) => 
 // POST /sessions/:liveShareSessionId/pending-participants
 // Called by guests after they submit their strengths/weaknesses form.
 app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
-  const liveShareSessionId = req.params.liveShareSessionId as string;
-  const { userId, displayName, peerNumber, strengths, weaknesses } = req.body as {
-    userId: string; displayName: string; peerNumber?: number; strengths: string; weaknesses: string;
-  };
+  try {
+    const liveShareSessionId = req.params.liveShareSessionId as string;
+    const { userId, displayName, peerNumber, strengths, weaknesses } = req.body as {
+      userId: string; displayName: string; peerNumber?: number; strengths: string; weaknesses: string;
+    };
 
-  if (!strengths && !weaknesses) {
-    return res.status(400).json({ ok: false, error: "strengths and weaknesses are required" });
+    if (!strengths && !weaknesses) {
+      return res.status(400).json({ ok: false, error: "strengths and weaknesses are required" });
+    }
+
+    const sessionMap = pendingParticipants.get(liveShareSessionId) ?? new Map<string, PendingParticipant>();
+    const key = peerNumber !== undefined ? `peer-${peerNumber}` : (userId || `anon-${sessionMap.size}`);
+    sessionMap.set(key, {
+      userId: userId ?? "",
+      peerNumber,
+      displayName: displayName ?? "",
+      strengths: strengths ?? "",
+      weaknesses: weaknesses ?? "",
+      confirmedAt: new Date().toISOString()
+    });
+    pendingParticipants.set(liveShareSessionId, sessionMap);
+
+    res.json({ ok: true, count: sessionMap.size });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "Failed to store pending participant" });
   }
-
-  const sessionMap = pendingParticipants.get(liveShareSessionId) ?? new Map<string, PendingParticipant>();
-  // Use peerNumber as the stable unique key (always unique per session), fall back to userId
-  const key = peerNumber !== undefined ? `peer-${peerNumber}` : (userId || `anon-${sessionMap.size}`);
-  sessionMap.set(key, {
-    userId: userId ?? "",
-    peerNumber,
-    displayName: displayName ?? "",
-    strengths: strengths ?? "",
-    weaknesses: weaknesses ?? "",
-    confirmedAt: new Date().toISOString()
-  });
-  pendingParticipants.set(liveShareSessionId, sessionMap);
-
-  res.json({ ok: true, count: sessionMap.size });
 });
 
 // GET /sessions/:liveShareSessionId/pending-participants
 // Polled by the host's NewSessionCreationView to get confirmed guest count.
 app.get("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
-  const liveShareSessionId = req.params.liveShareSessionId as string;
-  const sessionMap = pendingParticipants.get(liveShareSessionId);
-  const list = sessionMap ? [...sessionMap.values()] : [];
-  res.json({ count: list.length, participants: list });
+  try {
+    const liveShareSessionId = req.params.liveShareSessionId as string;
+    const sessionMap = pendingParticipants.get(liveShareSessionId);
+    const list = sessionMap ? [...sessionMap.values()] : [];
+    res.json({ count: list.length, participants: list });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "Failed to fetch pending participants" });
+  }
 });
 
 const port = process.env.PORT ?? 4000;

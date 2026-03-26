@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as vsls from "vsls";
 import { serverManager } from "../serverManager";
+import { createDraftSession } from "../utils/session_log_utils";
 import { NewSessionCreationView } from "./newSessionCreationView";
 
 export class InitialSessionView implements vscode.WebviewViewProvider {
@@ -252,6 +253,28 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
   private async startSession(participantCount: number, sessionName: string): Promise<void> {
     // This block starts a Live Share session when the user clicks "Start Session".
     try {
+      // Folder validation guard
+      if (!vscode.workspace.workspaceFolders?.length) {
+        this.postStartStatus(false, "Please open a folder before creating a session.");
+        return;
+      }
+
+      // API key pre-flight check (host only)
+      let apiKey = await this.context.secrets.get('openai-api-key');
+      if (!apiKey && process.env.OPENAI_API_KEY) {
+        await this.context.secrets.store('openai-api-key', process.env.OPENAI_API_KEY);
+        apiKey = process.env.OPENAI_API_KEY;
+      }
+      if (!apiKey) {
+        const action = await vscode.window.showWarningMessage(
+          "No OpenAI API key set. AI features won't work.",
+          "Set API Key"
+        );
+        if (action === "Set API Key") {
+          await vscode.commands.executeCommand("helloCigen.setApiKey");
+        }
+      }
+
       const liveShare = await vsls.getApi();
       if (!liveShare) {
         this.postStartStatus(false, "Live Share API not available.");
@@ -266,10 +289,16 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       try {
         await liveShare.shareServer({ port: 4000, displayName: 'CoGEN Server' });
       } catch {
-        // Non-fatal: Live Share may auto-share the port
+        vscode.window.showWarningMessage("Failed to share server port. Guests may not be able to connect.");
       }
       const projectConfig = await serverManager.httpFetch("/project_details");
       const projects = projectConfig?.projects ?? [];
+
+      // Create draft MongoDB doc immediately so the session is persisted early
+      const sessionId = liveShare.session?.id;
+      if (sessionId) {
+        await createDraftSession(sessionId, sessionName, serverManager);
+      }
 
       NewSessionCreationView.createOrShow(serverManager, liveShare, sessionName, participantCount, projects, this.context);
     } catch (err) {

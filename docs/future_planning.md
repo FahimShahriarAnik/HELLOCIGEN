@@ -65,98 +65,39 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
-## Phase 2: Session Robustness & Pre-flight
+## Phase 2: Session Robustness & Pre-flight ✅ COMPLETED
 
 **Branch:** `phase-2-session-robustness` (checkout from `phase-1-guest-sync`)
 **Issues addressed:** 1, 4, 5, 7
+**Status:** Implemented and compiled. Ready for testing.
 
-### 2.1 — Early MongoDB Document Creation
+### 2.1 — Early MongoDB Document Creation ✅
 
-**Goal:** Create session doc when session name is entered, patch incrementally.
+- Added `createDraftSession()` in `src/utils/session_log_utils.ts` — POSTs a minimal doc with `status: "draft"`, session name, start time, empty participants
+- Added `beginSessionDividing()` in `src/utils/session_log_utils.ts` — builds participant list from Live Share peers, PATCHes draft → `"dividing"`
+- `src/ui/initialSessionView.ts` calls `createDraftSession()` immediately after Live Share + server start
+- `src/ui/newSessionCreationView.ts` now PATCHes the existing draft (via `beginSessionDividing`) instead of POSTing a new doc
+- `src/server/server.ts` `POST /sessions` respects `status: "draft"` (skips pending-participant merge, sets state to `"draft"`)
+- `src/server/server.ts` `PATCH /sessions/:id` merges pending guest S&W when transitioning to `"dividing"`
 
-**Files to modify:**
-- `src/models/sessionLog.ts` — add `status` field to the TypeScript interface
-- `src/ui/initialSessionView.ts` or `src/ui/newSessionCreationView.ts` — create doc on session name entry
-- `src/server/server.ts` — ensure `POST /sessions` supports creating a draft doc
-- `src/utils/session_log_utils.ts` — update `createSessionLog` to support draft creation
+### 2.2 — Server Reliability ✅
 
-**Implementation:**
-- Add `status: "draft" | "dividing" | "active" | "completed"` to `SessionLogDocument`
-- When user enters session name and clicks next:
-  - `POST /sessions` creates a doc with `status: "draft"`, session name, start time, and empty participants
-- As participants join and submit profiles:
-  - `PATCH /sessions/:id` adds participant data incrementally
-- When host clicks "Begin Session":
-  - `PATCH /sessions/:id` updates status to `"dividing"`, sets final participant list
-- When host confirms divisions:
-  - `PATCH /sessions/:id` updates status to `"active"`, adds `division_of_work`
-- On session end:
-  - `PATCH /sessions/:id` sets status to `"completed"`, adds `end_time`
+- `src/serverManager.ts`: auto-restart on unexpected exit (up to 3 attempts, 2s delay), EADDRINUSE detection with specific error message, `restartServer()` public method, `intentionallyStopped` flag to distinguish intentional vs crash exits
+- `src/ui/initialSessionView.ts`: `shareServer()` failure now shows `showWarningMessage`
+- `src/extension.ts`: registered `helloCigen.restartServer` command
+- `package.json`: added `helloCigen.restartServer` to `contributes.commands`
+- `src/server/server.ts`: try/catch added to all Express route handlers (pending-participants POST/GET)
 
-### 2.2 — Server Reliability
+### 2.3 — API Key Pre-flight Check ✅
 
-**Goal:** Handle port conflicts, server crashes, and shareServer failures.
+- `src/extension.ts` `activate()`: auto-dismissing 10s notification via `withProgress` when API key is found at activation
+- `src/extension.ts` `helloCigen.start`: checks secrets + `process.env.OPENAI_API_KEY` fallback, auto-stores env var in secrets, shows warning with "Set API Key" button if missing
+- `src/ui/initialSessionView.ts` `startSession()`: same API key check applied to the primary session creation flow
 
-**Files to modify:**
-- `src/serverManager.ts` — add auto-restart, port conflict detection
-- `src/ui/initialSessionView.ts` — make shareServer failure visible
+### 2.4 — Folder Validation Guard ✅
 
-**Implementation:**
-- In `serverManager.ts`:
-  - On `close` event: attempt auto-restart up to 3 times with 2s delay between attempts
-  - Show `vscode.window.showWarningMessage("Server disconnected, reconnecting...")` during restart
-  - If retries exhausted: show error with "Restart Server" action button
-  - Add port conflict detection: catch `EADDRINUSE` from server stderr, show specific error message suggesting to close the conflicting process
-  - Add `restartServer()` public method for manual restart command
-- In `initialSessionView.ts`:
-  - Make `shareServer()` failure non-silent: show `vscode.window.showWarningMessage("Failed to share server port. Guests may not be able to connect.")`
-- In `extension.ts`:
-  - Register a `helloCigen.restartServer` command
-- Add proper try/catch to all Express route handlers in `server.ts` to prevent unhandled exceptions from crashing the process
-
-### 2.3 — API Key Pre-flight Check
-
-**Goal:** Check for OpenAI API key at extension activation and at session start. Auto-dismissing notification.
-
-**Files to modify:**
-- `src/extension.ts` — add activation-time check and session-start check
-
-**Implementation:**
-- On extension activation (`activate()` function):
-  ```typescript
-  const apiKey = await context.secrets.get('openai-api-key');
-  if (apiKey) {
-    vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, cancellable: false },
-      async (progress) => {
-        progress.report({ message: 'OpenAI API key found.' });
-        await new Promise(resolve => setTimeout(resolve, 10000));
-      }
-    );
-  }
-  ```
-  - This shows a notification that auto-dismisses after 10 seconds
-- At the start of `helloCigen.start` command (before Live Share):
-  - Check `context.secrets.get('openai-api-key')`
-  - If missing: prompt with `showWarningMessage("No OpenAI API key set. AI features won't work.")` with an "Set API Key" action button
-  - Also check `process.env.OPENAI_API_KEY` as fallback
-  - If env var found but not in secrets: auto-store it in secrets
-- Guests should never see this prompt (check Live Share role first)
-
-### 2.4 — Folder Validation Guard
-
-**Goal:** Prevent session creation without an open workspace folder.
-
-**Files to modify:**
-- `src/extension.ts` — add guard at top of `helloCigen.start`
-
-**Implementation:**
-```typescript
-if (!vscode.workspace.workspaceFolders?.length) {
-  vscode.window.showErrorMessage('Please open a folder before creating a session.');
-  return;
-}
-```
+- `src/extension.ts` `helloCigen.start`: guard at top returns early with error message if no workspace folder open
+- `src/ui/initialSessionView.ts` `startSession()`: same guard applied to the primary flow
 
 ### 2.5 — Verification
 
@@ -237,9 +178,12 @@ if (!vscode.workspace.workspaceFolders?.length) {
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
+- **Phase 2 is complete** — early draft doc creation, server auto-restart, API key pre-flight, folder guard all implemented
 - Each phase must compile and produce a working VSIX before moving to the next
-- The `status` field introduced in Phase 1 (in-memory on server) gets persisted to MongoDB in Phase 2
+- The `status` field is now persisted to MongoDB from doc creation (`"draft"` → `"dividing"` → `"active"`)
+- The `initialSessionView` flow now creates a draft doc immediately; `newSessionCreationView` PATCHes it to `"dividing"` (no longer POSTs a new doc)
+- The legacy `helloCigen.start` command flow still uses the old `createSessionLog` POST path
 - All OpenAI API calls are host-only; guests never need the key
 - `peerNumber` is the stable unique key for participant matching (replaces nullable `userId`)
 - Chat history must be synced across all participants (not just persisted) — when Phase 1 guest sync is in place, chat sync should piggyback on the same state mechanism
-- Auto-dismissing notifications pattern (`withProgress` + timeout) should be applied to other informational popups discovered during implementation — collect candidates as we go
+- Auto-dismissing notifications pattern (`withProgress` + timeout) is now used for the API key found notification; can be applied to other informational popups as needed

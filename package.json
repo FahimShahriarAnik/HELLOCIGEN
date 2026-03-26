@@ -2,7 +2,7 @@
   "name": "hello-cigen",
   "displayName": "HELLOCIGEN – Live Share API Testing",
   "description": "Testing VS Code Live Share APIs for collaborative sessions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.107.0"
@@ -73,6 +73,10 @@
       {
         "command": "helloCigen.sendActiveFile",
         "title": "HELLOCIGEN: Send Active File to Model"
+      },
+      {
+        "command": "helloCigen.restartServer",
+        "title": "HELLOCIGEN: Restart Server"
       }
     ],
     "menus": {

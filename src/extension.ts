@@ -13,6 +13,19 @@ export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
   output.show(true);
 
+  // API Key Pre-flight: show auto-dismissing notification if key is found
+  context.secrets.get('openai-api-key').then(apiKey => {
+    if (apiKey) {
+      vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, cancellable: false },
+        async (progress) => {
+          progress.report({ message: 'OpenAI API key found.' });
+          await new Promise(resolve => setTimeout(resolve, 10000));
+        }
+      );
+    }
+  });
+
   const initialSessionProvider = new InitialSessionView(context);
   const chatManager2 = new ChatManager2(context, serverManager);
   const taskTrackerProvider = new TaskTrackerProvider();
@@ -48,10 +61,46 @@ export function activate(context: vscode.ExtensionContext) {
     liveShare.onDidChangeSession(tryShowOnboarding);
   });
 
+  const restartServerCmd = vscode.commands.registerCommand(
+    "helloCigen.restartServer",
+    async () => {
+      try {
+        await serverManager.restartServer();
+        vscode.window.showInformationMessage("Server restarted successfully.");
+      } catch (err) {
+        vscode.window.showErrorMessage(`Failed to restart server: ${err}`);
+      }
+    }
+  );
+
   const disposable = vscode.commands.registerCommand(
     "helloCigen.start",
     async () => {
       output.show(true);
+
+      // Folder validation guard
+      if (!vscode.workspace.workspaceFolders?.length) {
+        vscode.window.showErrorMessage('Please open a folder before creating a session.');
+        return;
+      }
+
+      // API key pre-flight check (host only — guests never see this)
+      let apiKey = await context.secrets.get('openai-api-key');
+      if (!apiKey && process.env.OPENAI_API_KEY) {
+        // Auto-store env var in secrets
+        await context.secrets.store('openai-api-key', process.env.OPENAI_API_KEY);
+        apiKey = process.env.OPENAI_API_KEY;
+      }
+      if (!apiKey) {
+        const action = await vscode.window.showWarningMessage(
+          "No OpenAI API key set. AI features won't work.",
+          "Set API Key"
+        );
+        if (action === "Set API Key") {
+          await vscode.commands.executeCommand("helloCigen.setApiKey");
+        }
+      }
+
       const liveShare = await vsls.getApi();
       if (!liveShare) {
         vscode.window.showErrorMessage("Live Share API not available.");
@@ -196,6 +245,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+  context.subscriptions.push(restartServerCmd);
   context.subscriptions.push(openChat2Cmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);

@@ -4,28 +4,34 @@ import * as child_process from "child_process";
 import * as path from "path";
 import fetch from "node-fetch"; // npm install node-fetch @types/node-fetch
 
-const SERVER_PORT = 4000; // // Fixed port for our Express server
-const SERVER_URL = `http://localhost:${SERVER_PORT}`; // Base URL for server API
-let serverProcess: child_process.ChildProcess | null = null; // Tracks the running Node child process
-let serverReady = false; // Tracks if server responded to health check
+const SERVER_PORT = 4000;
+const SERVER_URL = `http://localhost:${SERVER_PORT}`;
+let serverProcess: child_process.ChildProcess | null = null;
+let serverReady = false;
+
+const MAX_RESTART_ATTEMPTS = 3;
+const RESTART_DELAY_MS = 2000;
 
 const output = vscode.window.createOutputChannel("Server Manager");
 
 export class ServerManager {
+  private restartCount = 0;
+  private intentionallyStopped = false;
+
   async startServer(): Promise<void> {
     if (serverReady || serverProcess) {
       output.appendLine("Server already running");
       return;
     }
 
+    this.intentionallyStopped = false;
     output.appendLine("Starting MongoDB server...");
     const serverPath = path.join(
       __dirname.replace("/out", ""),
       "out/server/server.js"
-    ); // Adjust path if your build differs
+    );
 
-    // silent:true to capture output
-    serverProcess = child_process.fork(serverPath, [], { silent: true }); 
+    serverProcess = child_process.fork(serverPath, [], { silent: true });
 
     serverProcess.stdout?.on("data", (data) => {
       const msg = data.toString();
@@ -35,16 +41,63 @@ export class ServerManager {
     serverProcess.stderr?.on("data", (data) => {
       const msg = data.toString();
       output.appendLine(`[SERVER ERROR] ${msg}`);
+
+      // Detect port conflict
+      if (msg.includes("EADDRINUSE")) {
+        vscode.window.showErrorMessage(
+          `Port ${SERVER_PORT} is already in use. Close the conflicting process or change the server port.`,
+          "OK"
+        );
+      }
     });
 
     serverProcess.on("close", (code) => {
       output.appendLine(`Server closed with code ${code}`);
       serverReady = false;
       serverProcess = null;
+
+      // Auto-restart on unexpected exit (not intentionally stopped)
+      if (!this.intentionallyStopped && code !== 0) {
+        this.attemptAutoRestart();
+      }
     });
 
-    // Wait for server to be ready (poll health check)
     await this.waitForReady();
+    this.restartCount = 0; // Reset on successful start
+  }
+
+  private async attemptAutoRestart(): Promise<void> {
+    if (this.restartCount >= MAX_RESTART_ATTEMPTS) {
+      const action = await vscode.window.showErrorMessage(
+        "Server crashed and auto-restart failed after 3 attempts.",
+        "Restart Server"
+      );
+      if (action === "Restart Server") {
+        this.restartCount = 0;
+        this.startServer();
+      }
+      return;
+    }
+
+    this.restartCount++;
+    output.appendLine(`Auto-restart attempt ${this.restartCount}/${MAX_RESTART_ATTEMPTS}...`);
+    vscode.window.showWarningMessage(`Server disconnected, reconnecting... (attempt ${this.restartCount}/${MAX_RESTART_ATTEMPTS})`);
+
+    await new Promise(resolve => setTimeout(resolve, RESTART_DELAY_MS));
+
+    try {
+      await this.startServer();
+    } catch (err) {
+      output.appendLine(`Auto-restart failed: ${err}`);
+    }
+  }
+
+  async restartServer(): Promise<void> {
+    output.appendLine("Manual server restart requested");
+    this.stopServer();
+    this.restartCount = 0;
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await this.startServer();
   }
 
   private async waitForReady(timeoutMs = 30000): Promise<void> {
@@ -77,6 +130,7 @@ export class ServerManager {
   }
 
   stopServer(): void {
+    this.intentionallyStopped = true;
     if (serverProcess) {
       serverProcess.kill();
       serverProcess = null;
