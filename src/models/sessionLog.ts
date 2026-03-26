@@ -7,6 +7,7 @@ export interface FileTrackingEntry {
 
 export interface Participant {
   id: string;
+  peerNumber?: number;    // stable unique key within a Live Share session
   name: string;
   role: string;
   access_level: string;
@@ -23,7 +24,9 @@ interface Task {
   subtasks?: Task[];   // optional nested subtasks
 }
 
-interface Division {
+export type SessionStatus = "draft" | "dividing" | "active" | "completed";
+
+export interface Division {
   id: string;
   title: string;        // module / chunk name
   owner_id: string;     // participant id reference
@@ -36,6 +39,7 @@ export interface SessionLogDocument {
   session_link?: string; // making it optional since it won't be required and hard to fetch from clipboard.
   session_name?: string; // yet to reflect in existing log files and UI
   session_number: number;
+  status?: SessionStatus; // session lifecycle state
   project_title: string;
   start_time: string;
   last_updated?: string;  // ISO string, updated whenever session log is patched

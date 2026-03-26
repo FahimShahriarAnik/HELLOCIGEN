@@ -22,6 +22,7 @@ export async function createSessionLog(
 
   const hostParticipant = {
     id: s.user?.id ?? 'u1',
+    peerNumber: 1, // host is peerNumber 1, matching fallback id 'u1'
     name: s.user?.displayName ?? "Host",
     role: roleToString(s.role),
     joined_at: new Date().toISOString(),
@@ -32,6 +33,7 @@ export async function createSessionLog(
 
   const allParticipants = [hostParticipant, ...liveShare.peers.map((p: any, idx: number) => ({
     id: p.user?.id ?? `u${idx + 2}`,
+    peerNumber: p.peerNumber ?? (idx + 2), // matches fallback id `u${idx + 2}`
     name: p.user?.displayName ?? `Peer${p.peerNumber}`,
     role: roleToString(p.role),
     joined_at: new Date().toISOString(),

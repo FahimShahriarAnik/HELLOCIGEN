@@ -2,7 +2,7 @@
 import express from "express";
 import { getProjectConfigCollection, getSessionLogCollection } from "./db";
 import { ProjectConfigDocument } from "../models/projectConfig";
-import { SessionLogDocument } from "../models/sessionLog";
+import { SessionLogDocument, Division } from "../models/sessionLog";
 import type { Request, Response } from "express";
 
 
@@ -14,6 +14,7 @@ app.use(express.json()); // Middleware to parse JSON bodies
 // Cleared after session log is created via POST /sessions.
 interface PendingParticipant {
   userId: string;
+  peerNumber?: number;
   displayName: string;
   strengths: string;
   weaknesses: string;
@@ -21,6 +22,14 @@ interface PendingParticipant {
 }
 // Outer key: liveShare session ID → inner map: userId → PendingParticipant
 const pendingParticipants = new Map<string, Map<string, PendingParticipant>>();
+
+// In-memory session state machine: tracks lifecycle so guests can poll for transitions.
+interface SessionState {
+  status: "draft" | "dividing" | "active" | "completed";
+  division_of_work?: Division[];
+  participants?: Array<{ id: string; name: string }>;
+}
+const sessionStates = new Map<string, SessionState>();
 
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
@@ -91,11 +100,17 @@ app.post("/sessions", async (req: Request, res: Response) => {
     const coll = await getSessionLogCollection();
     const body = req.body as SessionLogDocument;
 
-    // Merge pending guest S&W into guest participant entries (matched by userId).
+    // Merge pending guest S&W into guest participant entries.
+    // Match by peerNumber (stable per session), fall back to userId.
     const pending = pendingParticipants.get(body.session_id);
     if (pending && pending.size > 0) {
+      const pendingArray = [...pending.values()];
       body.participants = body.participants.map(p => {
-        const match = pending.get(p.id);
+        // Try matching by peerNumber first (stable key), then by userId
+        const match = pendingArray.find(pp =>
+          (pp.peerNumber !== undefined && (p as any).peerNumber !== undefined && pp.peerNumber === (p as any).peerNumber) ||
+          (pp.userId && pp.userId === p.id)
+        );
         if (match) {
           return { ...p, name: match.displayName || p.name, strengths: match.strengths, weaknesses: match.weaknesses };
         }
@@ -105,6 +120,10 @@ app.post("/sessions", async (req: Request, res: Response) => {
     }
 
     const result = await coll.insertOne(body);
+
+    // Set in-memory session state to "dividing" so guests can poll for transitions
+    sessionStates.set(body.session_id, { status: "dividing" });
+
     res.status(201).json({ ok: true, id: result.insertedId });
   } catch (err) {
     console.error(err);
@@ -116,7 +135,7 @@ app.post("/sessions", async (req: Request, res: Response) => {
 app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
   try {
     const coll = await getSessionLogCollection();
-    const { session_id } = req.params;
+    const session_id = req.params.session_id as string;
     const update = req.body as Partial<SessionLogDocument>;
 
     // Get max session_number for this session_id
@@ -129,6 +148,16 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
       { session_id, session_number: latest[0].session_number },  // target latest
       { $set: update }
     );
+
+    // If division_of_work was patched, transition state to "active" so guests detect it
+    if (update.division_of_work) {
+      const participants = latest[0].participants?.map((p: any) => ({ id: p.id, name: p.name })) ?? [];
+      sessionStates.set(session_id, {
+        status: "active",
+        division_of_work: update.division_of_work as Division[],
+        participants
+      });
+    }
 
     res.json({ ok: true, matched: result.matchedCount, modified: result.modifiedCount });
   } catch (err) {
@@ -190,12 +219,23 @@ app.get("/sessions/:session_id", async (req: Request, res: Response) => {
   }
 });
 
+// GET /sessions/:liveShareSessionId/state
+// Polled by guests to detect session lifecycle transitions (dividing → active).
+app.get("/sessions/:liveShareSessionId/state", (req: Request, res: Response) => {
+  const { liveShareSessionId } = req.params;
+  const state = sessionStates.get(liveShareSessionId as string);
+  if (!state) {
+    return res.json({ status: "unknown" });
+  }
+  res.json(state);
+});
+
 // POST /sessions/:liveShareSessionId/pending-participants
 // Called by guests after they submit their strengths/weaknesses form.
 app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
   const liveShareSessionId = req.params.liveShareSessionId as string;
-  const { userId, displayName, strengths, weaknesses } = req.body as {
-    userId: string; displayName: string; strengths: string; weaknesses: string;
+  const { userId, displayName, peerNumber, strengths, weaknesses } = req.body as {
+    userId: string; displayName: string; peerNumber?: number; strengths: string; weaknesses: string;
   };
 
   if (!strengths && !weaknesses) {
@@ -203,9 +243,11 @@ app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, re
   }
 
   const sessionMap = pendingParticipants.get(liveShareSessionId) ?? new Map<string, PendingParticipant>();
-  const key = userId || `anon-${sessionMap.size}`;
+  // Use peerNumber as the stable unique key (always unique per session), fall back to userId
+  const key = peerNumber !== undefined ? `peer-${peerNumber}` : (userId || `anon-${sessionMap.size}`);
   sessionMap.set(key, {
-    userId: key,
+    userId: userId ?? "",
+    peerNumber,
     displayName: displayName ?? "",
     strengths: strengths ?? "",
     weaknesses: weaknesses ?? "",

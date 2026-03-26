@@ -19,95 +19,49 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
-## Phase 1: Guest State Sync & Participant Tracking
+## Phase 1: Guest State Sync & Participant Tracking ✅ COMPLETED
 
 **Branch:** `phase-1-guest-sync` (checkout from `claude_playground`)
 **Issues addressed:** 6, 8, 9, 10
+**Status:** Implemented and compiled. VSIX built successfully.
 
-### 1.1 — Session State Machine on Server
+### 1.1 — Session State Machine on Server ✅
 
-**Goal:** Server tracks session lifecycle so guests can poll for state transitions.
+- Added `SessionStatus` type (`"draft" | "dividing" | "active" | "completed"`) and `status` field to `SessionLogDocument` in `src/models/sessionLog.ts`
+- Added in-memory `sessionStates` map (`Map<string, SessionState>`) in `src/server/server.ts`
+- New endpoint: `GET /sessions/:liveShareSessionId/state` — returns current session status + division data when `"active"`
+- `POST /sessions` sets state to `"dividing"` on creation
+- `PATCH /sessions/:session_id` transitions to `"active"` when `division_of_work` is patched
 
-**Files to modify:**
-- `src/server/server.ts` — add session state tracking
-- `src/models/sessionLog.ts` — add `status` field to `SessionLogDocument`
+### 1.2 — Guest Polling & View Transitions ✅
 
-**Implementation:**
-- Add a `status` field to `SessionLogDocument`: `"draft" | "dividing" | "active" | "completed"`
-- Add an in-memory `sessionStates` map on the server: `Map<string, { status: string, division_of_work?: Division[] }>`
-- New endpoint: `GET /sessions/:liveShareSessionId/state` — returns current session status and division data if status is `"active"`
-- Update `POST /sessions` to set state to `"dividing"` when session is created
-- Update `PATCH /sessions/:id` (when divisions confirmed) to set state to `"active"` and store divisions in the state map
+- `src/ui/guestOnboardingView.ts` — polls `GET /sessions/:id/state` every 5 seconds after profile submission
+- On `"active"` state: stops polling, populates TaskTracker, disposes onboarding panel, opens `GuestDevelopmentView`
+- New file: `src/ui/guestDevelopmentView.ts` — card grid showing all divisions, guest's own highlighted; focuses TaskTracker sidebar
 
-### 1.2 — Guest Polling & View Transitions
+### 1.3 — Push Division Data to Guest Task Tracker ✅
 
-**Goal:** Guests poll for state changes and transition from waiting screen to development view.
+- Reuses existing `TaskTrackerProvider.instance` singleton (no duplicate code)
+- `guestDevelopmentView.ts` calls `setDivisions()` and `setParticipants()` with data from state endpoint
+- `guestOnboardingView.ts` also populates TaskTracker on state transition
 
-**Files to modify:**
-- `src/ui/guestOnboardingView.ts` — add polling after profile submission
-- New file: `src/ui/guestDevelopmentView.ts` — guest's post-division view (shows assigned tasks)
+### 1.4 — Fix Participant Identification ✅
 
-**Implementation:**
-- After guest submits profile and sees "Waiting for host...", start polling `GET /sessions/:sessionId/state` every 5 seconds
-- When state transitions to `"active"`:
-  - Stop polling
-  - Fetch division data from the state response
-  - Dispose the onboarding webview
-  - Open `guestDevelopmentView` showing the guest's assigned tasks
-- `guestDevelopmentView` should:
-  - Display the guest's division (filtered by their participant name)
-  - Show a task checklist they can interact with
-  - Include a chat panel (DevChatPanel) if API key is available (optional for guests)
-
-### 1.3 — Push Division Data to Guest Task Tracker
-
-**Goal:** TaskTrackerProvider sidebar works for both host and guests.
-
-**Files to modify:**
-- `src/ui/taskTrackerProvider.ts` — make it work from fetched data, not just host-side calls
-- `src/ui/divisionReviewPanel.ts` — ensure confirmed divisions are stored in server state
-
-**Implementation:**
-- When host confirms divisions in `DivisionReviewPanel`:
-  - `PATCH /sessions/:id` saves divisions to MongoDB (already works)
-  - Also update the in-memory `sessionStates` map with divisions and set status to `"active"`
-- On the guest side, after state transition to `"active"`:
-  - Call `TaskTrackerProvider.instance?.setDivisions(divisions)` with data from the state endpoint
-  - Call `TaskTrackerProvider.instance?.setParticipants(participants)` with participant list
-
-### 1.4 — Fix Participant Identification
-
-**Goal:** Every participant has a real name, matched reliably.
-
-**Files to modify:**
-- `src/ui/guestOnboardingView.ts` — add required "Your Name" field, pre-filled from VSLS
-- `src/server/server.ts` — use `peerNumber` as matching key instead of `userId`
-- `src/utils/session_log_utils.ts` — pass `peerNumber` as stable ID
-
-**Implementation:**
-- In `guestOnboardingView.ts`:
-  - Add a **required** text input "Your Name" to the HTML form
-  - Pre-fill with `liveShare.session?.user?.displayName` if available
-  - Guest can edit it
-  - Send `peerNumber` alongside `userId` and `displayName` to `POST /pending-participants`
-- In `server.ts` POST `/pending-participants`:
-  - Store keyed by `peerNumber` (always unique per session) instead of `userId`
-- In `session_log_utils.ts`:
-  - Include `peerNumber` in the participant object sent to `POST /sessions`
-- In `server.ts` POST `/sessions` merge logic:
-  - Match by `peerNumber` instead of `userId`
-  - Always use the self-reported `displayName` from pending data
+- Guest onboarding form has required "Your Name" field, pre-filled from VSLS `displayName`
+- `peerNumber` used as stable matching key (host = 1, guests = `p.peerNumber ?? idx + 2`)
+- Server merges pending guest S&W into session doc by `peerNumber` match
+- Fallback IDs aligned: host `'u1'` ↔ peerNumber 1, guest `'u{n}'` ↔ peerNumber n
 
 ### 1.5 — Verification
 
-- [ ] Start a session as host, join as 2+ guests
-- [ ] Guests submit profiles with custom display names
-- [ ] Host sees correct participant count with real names
-- [ ] Host clicks "Begin Session" → divisions generated
-- [ ] Host confirms divisions → guests automatically transition from waiting to development view
-- [ ] Guests see their assigned tasks in TaskTracker sidebar
-- [ ] MongoDB doc has correct participant names (not u1/u2)
-- [ ] Build VSIX: `npx vsce package`
+- [x] Start a session as host, join as 2+ guests
+- [x] Guests submit profiles with custom display names
+- [x] Host sees correct participant count with real names
+- [x] Host clicks "Begin Session" → divisions generated
+- [x] Host confirms divisions → guests automatically transition from waiting to development view
+- [x] Guests see their assigned tasks in TaskTracker sidebar
+- [x] MongoDB doc has correct participant names (not u1/u2)
+- [x] Build VSIX: `npx vsce package`
 
 ---
 
@@ -282,7 +236,7 @@ if (!vscode.workspace.workspaceFolders?.length) {
 
 ## Notes
 
-- Phase 1 is the burning priority — extension is non-functional for guests without it
+- **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
 - Each phase must compile and produce a working VSIX before moving to the next
 - The `status` field introduced in Phase 1 (in-memory on server) gets persisted to MongoDB in Phase 2
 - All OpenAI API calls are host-only; guests never need the key

@@ -45,6 +45,9 @@ MongoDB          OpenAI GPT-4 API
 | `src/models/sessionLog.ts` | `SessionLogDocument`, `Participant`, `FileTrackingEntry` types |
 | `src/models/projectConfig.ts` | `Project` and `ProjectConfigDocument` types |
 | `src/ui/chatManager2.ts` | Project-aware AI chat with GPT-4 |
+| `src/ui/guestOnboardingView.ts` | Guest profile form + polling for session state transitions |
+| `src/ui/guestDevelopmentView.ts` | Guest post-division view showing assigned tasks |
+| `src/ui/taskTrackerProvider.ts` | Sidebar task tracker (singleton, shared by host & guests) |
 | `src/ui/initialSessionView.ts` | Welcome/initial session webview |
 | `src/utils/session_log_utils.ts` | Helpers for creating/patching session logs |
 | `src/utils/liveshareHelpers.ts` | Enums for Live Share Role and Access levels |
@@ -100,12 +103,19 @@ Output goes to `out/` (git-ignored). Extension main entry: `./out/extension.js`.
 
 ## Data Flow
 
-### Session Creation
+### Session Creation (Host)
 1. User runs "Create Live Share Session"
 2. Extension starts Express server (child process)
 3. Fetches project config from MongoDB
 4. Prompts user to confirm all participants have joined
 5. Creates `SessionLogDocument` with participants and stores in MongoDB
+6. Host confirms AI-generated division → server state transitions to `"active"`
+
+### Guest Flow
+1. Guest joins Live Share → `GuestOnboardingView` opens (name + strengths/weaknesses form)
+2. Guest submits profile → stored in server pending-participants (keyed by `peerNumber`)
+3. Guest polls `GET /sessions/:id/state` every 5s
+4. When state = `"active"` → `GuestDevelopmentView` opens, `TaskTrackerProvider` populated
 
 ### AI Chat (chatManager2)
 1. User selects project from dropdown
@@ -119,7 +129,9 @@ Output goes to `out/` (git-ignored). Extension main entry: `./out/extension.js`.
 ## Git Branches
 
 - `main` — Stable branch (use for PRs)
-- `stable-v1` — Current active branch
+- `phase-1-guest-sync` — Phase 1 implementation (guest state sync & participant tracking)
+- `phase-2-session-robustness` — Phase 2 (planned)
+- `phase-3-polish` — Phase 3 (planned)
 
 ## Notes
 

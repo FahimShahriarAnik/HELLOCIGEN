@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
+import { GuestDevelopmentView } from './guestDevelopmentView';
+import { TaskTrackerProvider } from './taskTrackerProvider';
 
 export class GuestOnboardingView {
   private static panel: vscode.WebviewPanel | undefined;
+  private static pollTimer: ReturnType<typeof setInterval> | undefined;
 
   static createOrShow(context: vscode.ExtensionContext, liveShare: any): void {
     if (this.panel) {
@@ -16,10 +19,11 @@ export class GuestOnboardingView {
       { enableScripts: true }
     );
 
-    this.panel.webview.html = this.getHtml();
+    this.panel.webview.html = this.getHtml(liveShare);
 
     const userId = liveShare.session?.user?.id ?? '';
     const displayName = liveShare.session?.user?.displayName ?? '';
+    const peerNumber = liveShare.session?.peerNumber ?? 0;
 
     this.panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.type !== 'confirmGuest') return;
@@ -30,13 +34,21 @@ export class GuestOnboardingView {
         return;
       }
 
+      const submittedName = msg.displayName || displayName;
+
       try {
         const response = await fetch(
           `http://localhost:4000/sessions/${sessionId}/pending-participants`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, displayName, strengths: msg.strengths, weaknesses: msg.weaknesses })
+            body: JSON.stringify({
+              userId,
+              displayName: submittedName,
+              peerNumber,
+              strengths: msg.strengths,
+              weaknesses: msg.weaknesses
+            })
           }
         );
 
@@ -45,6 +57,9 @@ export class GuestOnboardingView {
         }
 
         this.panel?.webview.postMessage({ type: 'confirmed' });
+
+        // Start polling for session state transitions
+        this.startPolling(sessionId, submittedName, context);
       } catch (err) {
         vscode.window.showErrorMessage(`Failed to submit profile: ${err}`);
         this.panel?.webview.postMessage({ type: 'submitError', message: String(err) });
@@ -52,11 +67,52 @@ export class GuestOnboardingView {
     });
 
     this.panel.onDidDispose(() => {
+      this.stopPolling();
       this.panel = undefined;
     });
   }
 
-  private static getHtml(): string {
+  private static startPolling(sessionId: string, guestName: string, context: vscode.ExtensionContext): void {
+    this.stopPolling();
+    this.pollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`http://localhost:4000/sessions/${sessionId}/state`);
+        if (!resp.ok) return;
+        const state = await resp.json() as any;
+
+        if (state.status === 'active') {
+          this.stopPolling();
+
+          // Populate task tracker for guest
+          if (state.division_of_work && state.participants) {
+            TaskTrackerProvider.instance?.setParticipants(state.participants);
+            TaskTrackerProvider.instance?.setDivisions(state.division_of_work as any);
+          }
+
+          // Transition to guest development view
+          this.panel?.dispose();
+          GuestDevelopmentView.createOrShow(
+            context,
+            guestName,
+            state.division_of_work ?? [],
+            state.participants ?? []
+          );
+        }
+      } catch {
+        // Server may not be reachable; keep polling
+      }
+    }, 5000);
+  }
+
+  private static stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+  }
+
+  private static getHtml(liveShare: any): string {
+    const prefillName = (liveShare.session?.user?.displayName ?? '').replace(/'/g, "\\'");
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -97,6 +153,19 @@ export class GuestOnboardingView {
       letter-spacing: 0.05em;
       opacity: 0.7;
       margin-bottom: 6px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--vscode-input-border);
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 13px;
+    }
+    input[type="text"]:focus {
+      outline: 1px solid var(--vscode-focusBorder);
     }
     textarea {
       width: 100%;
@@ -177,6 +246,11 @@ export class GuestOnboardingView {
       </p>
 
       <div class="field">
+        <label for="displayName">Your Name <span style="color:var(--vscode-errorForeground)">*</span></label>
+        <input type="text" id="displayName" value="${prefillName}" placeholder="Enter your name" />
+      </div>
+
+      <div class="field">
         <label for="strengths">Your Strengths</label>
         <textarea id="strengths" placeholder="e.g. React, TypeScript, REST APIs, testing..."></textarea>
       </div>
@@ -205,8 +279,16 @@ export class GuestOnboardingView {
     const vscode = acquireVsCodeApi();
 
     document.getElementById('confirmBtn').addEventListener('click', () => {
+      const displayName = document.getElementById('displayName').value.trim();
       const strengths = document.getElementById('strengths').value.trim();
       const weaknesses = document.getElementById('weaknesses').value.trim();
+
+      if (!displayName) {
+        const err = document.getElementById('errorMsg');
+        err.textContent = 'Your name is required.';
+        err.style.display = '';
+        return;
+      }
 
       if (!strengths && !weaknesses) {
         const err = document.getElementById('errorMsg');
@@ -219,7 +301,7 @@ export class GuestOnboardingView {
       document.getElementById('confirmBtn').textContent = 'Submitting...';
       document.getElementById('errorMsg').style.display = 'none';
 
-      vscode.postMessage({ type: 'confirmGuest', strengths, weaknesses });
+      vscode.postMessage({ type: 'confirmGuest', displayName, strengths, weaknesses });
     });
 
     window.addEventListener('message', (event) => {

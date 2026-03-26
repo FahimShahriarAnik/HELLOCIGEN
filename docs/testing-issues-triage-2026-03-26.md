@@ -71,7 +71,7 @@ The API key is only checked when `DivisionReviewPanel` opens (after session crea
 
 ---
 
-### Issue 6: Task division only shown to host
+### Issue 6: Task division only shown to host — ✅ RESOLVED (Phase 1)
 **Priority: P0-Critical | Severity: High**
 
 **By design currently**, but a critical UX gap. The `DivisionReviewPanel` is only created on the host's machine (`newSessionCreationView.ts` → `DivisionReviewPanel.createOrShow()`). Guests are stuck on the "Waiting for host..." screen with no visibility.
@@ -102,7 +102,7 @@ if (!vscode.workspace.workspaceFolders?.length) {
 
 ---
 
-### Issue 8: Participants not separately identified (u1, u2, host, peer2)
+### Issue 8: Participants not separately identified (u1, u2, host, peer2) — ✅ RESOLVED (Phase 1)
 **Priority: P2-Medium | Severity: Medium**
 
 **Root cause:** `session_log_utils.ts:24,34` uses fallbacks:
@@ -122,7 +122,7 @@ The Live Share API **does** provide `user.id`, `user.displayName`, and `user.use
 
 ---
 
-### Issue 9: Task tracker not reflected in participant window
+### Issue 9: Task tracker not reflected in participant window — ✅ PARTIALLY RESOLVED (Phase 1)
 **Priority: P1-High | Severity: High**
 
 Two sub-problems:
@@ -139,7 +139,7 @@ Two sub-problems:
 
 ---
 
-### Issue 10: Participant gets nothing after "Profile saved" popup
+### Issue 10: Participant gets nothing after "Profile saved" popup — ✅ RESOLVED (Phase 1)
 **Priority: P0-Critical | Severity: Critical**
 
 After a guest submits their profile, they see "Profile saved! Waiting for host..." — and then **nothing ever happens**. The guest is permanently stuck because:
@@ -191,12 +191,12 @@ INFORMATIONAL ONLY (no code change needed):
 
 | # | Issue | Priority | Severity | Independent? |
 |---|-------|----------|----------|-------------|
-| 10 | Guest stuck after profile save | **P0-Critical** | **Critical** | No (cluster) |
-| 6 | Division only shown to host | **P0-Critical** | **High** | No (cluster) |
-| 9 | Task tracker not on participant | **P1-High** | **High** | No (cluster) |
+| 10 | ~~Guest stuck after profile save~~ | ~~P0-Critical~~ | ~~Critical~~ | ✅ Phase 1 |
+| 6 | ~~Division only shown to host~~ | ~~P0-Critical~~ | ~~High~~ | ✅ Phase 1 |
+| 9 | ~~Task tracker not on participant~~ | ~~P1-High~~ | ~~High~~ | ✅ Phase 1 (partial — display works, real-time sync pending) |
 | 4 | Doc not created after all joined | **P1-High** | **High** | Needs clarification |
 | 5 | API key asked mid-flow | **P2-Medium** | **Medium** | Yes |
-| 8 | Generic participant names | **P2-Medium** | **Medium** | Yes |
+| 8 | ~~Generic participant names~~ | ~~P2-Medium~~ | ~~Medium~~ | ✅ Phase 1 |
 | 11 | Chat history not persisted | **P2-Medium** | **Medium** | Yes |
 | 2 | No join permission from host | **P3-Low** | **Medium** | Yes |
 | 3 | Count only after S&W | **P3-Low** | **Low** | Yes |
