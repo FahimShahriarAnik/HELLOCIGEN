@@ -32,12 +32,20 @@ export function activate(context: vscode.ExtensionContext) {
   // Auto-detect when this instance joins a Live Share session as a guest.
   vsls.getApi().then(liveShare => {
     if (!liveShare) return;
-    liveShare.onDidChangeSession(() => {
+
+    const tryShowOnboarding = () => {
       const session = liveShare.session;
       if (session && session.role === Role.Guest) {
         GuestOnboardingView.createOrShow(context, liveShare);
       }
-    });
+    };
+
+    // Check if already in a guest session (fixes race where session
+    // is connected before the listener is registered)
+    tryShowOnboarding();
+
+    // Also listen for future session changes
+    liveShare.onDidChangeSession(tryShowOnboarding);
   });
 
   const disposable = vscode.commands.registerCommand(

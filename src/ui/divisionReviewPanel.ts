@@ -93,10 +93,13 @@ export class DivisionReviewPanel {
       return;
     }
 
-    const participants = this.buildParticipants(participantCount);
+    // Use real names from session log; fall back to generic names if unavailable
+    const participants: Participant[] = participantProfiles.length > 0
+      ? participantProfiles.map(p => ({ id: p.id, name: p.name }))
+      : this.buildParticipants(participantCount);
     const divisions: DivisionWithOwner[] = rawDivisions.map((d, i) => ({
       ...d,
-      owner_id: `u${i + 1}`
+      owner_id: participants[i]?.id ?? `u${i + 1}`
     }));
 
     panel.webview.postMessage({ type: 'divisionsReady', divisions, participants });

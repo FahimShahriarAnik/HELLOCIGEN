@@ -18,6 +18,9 @@ export class GuestOnboardingView {
 
     this.panel.webview.html = this.getHtml();
 
+    const userId = liveShare.session?.user?.id ?? '';
+    const displayName = liveShare.session?.user?.displayName ?? '';
+
     this.panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.type !== 'confirmGuest') return;
 
@@ -33,7 +36,7 @@ export class GuestOnboardingView {
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ strengths: msg.strengths, weaknesses: msg.weaknesses })
+            body: JSON.stringify({ userId, displayName, strengths: msg.strengths, weaknesses: msg.weaknesses })
           }
         );
 

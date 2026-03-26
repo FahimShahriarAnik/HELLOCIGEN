@@ -13,11 +13,14 @@ app.use(express.json()); // Middleware to parse JSON bodies
 // In-memory store for guest pending confirmations, keyed by liveShare session_id.
 // Cleared after session log is created via POST /sessions.
 interface PendingParticipant {
+  userId: string;
+  displayName: string;
   strengths: string;
   weaknesses: string;
   confirmedAt: string;
 }
-const pendingParticipants = new Map<string, PendingParticipant[]>();
+// Outer key: liveShare session ID → inner map: userId → PendingParticipant
+const pendingParticipants = new Map<string, Map<string, PendingParticipant>>();
 
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
@@ -88,14 +91,13 @@ app.post("/sessions", async (req: Request, res: Response) => {
     const coll = await getSessionLogCollection();
     const body = req.body as SessionLogDocument;
 
-    // Merge pending guest S&W into guest participant entries (matched by join order).
+    // Merge pending guest S&W into guest participant entries (matched by userId).
     const pending = pendingParticipants.get(body.session_id);
-    if (pending && pending.length > 0) {
-      let guestIdx = 0;
+    if (pending && pending.size > 0) {
       body.participants = body.participants.map(p => {
-        if (p.role !== "Host" && guestIdx < pending.length) {
-          const guestData = pending[guestIdx++];
-          return { ...p, strengths: guestData.strengths, weaknesses: guestData.weaknesses };
+        const match = pending.get(p.id);
+        if (match) {
+          return { ...p, name: match.displayName || p.name, strengths: match.strengths, weaknesses: match.weaknesses };
         }
         return p;
       });
@@ -192,24 +194,34 @@ app.get("/sessions/:session_id", async (req: Request, res: Response) => {
 // Called by guests after they submit their strengths/weaknesses form.
 app.post("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
   const liveShareSessionId = req.params.liveShareSessionId as string;
-  const { strengths, weaknesses } = req.body as { strengths: string; weaknesses: string };
+  const { userId, displayName, strengths, weaknesses } = req.body as {
+    userId: string; displayName: string; strengths: string; weaknesses: string;
+  };
 
   if (!strengths && !weaknesses) {
     return res.status(400).json({ ok: false, error: "strengths and weaknesses are required" });
   }
 
-  const existing = pendingParticipants.get(liveShareSessionId) ?? [];
-  existing.push({ strengths: strengths ?? "", weaknesses: weaknesses ?? "", confirmedAt: new Date().toISOString() });
-  pendingParticipants.set(liveShareSessionId, existing);
+  const sessionMap = pendingParticipants.get(liveShareSessionId) ?? new Map<string, PendingParticipant>();
+  const key = userId || `anon-${sessionMap.size}`;
+  sessionMap.set(key, {
+    userId: key,
+    displayName: displayName ?? "",
+    strengths: strengths ?? "",
+    weaknesses: weaknesses ?? "",
+    confirmedAt: new Date().toISOString()
+  });
+  pendingParticipants.set(liveShareSessionId, sessionMap);
 
-  res.json({ ok: true, count: existing.length });
+  res.json({ ok: true, count: sessionMap.size });
 });
 
 // GET /sessions/:liveShareSessionId/pending-participants
 // Polled by the host's NewSessionCreationView to get confirmed guest count.
 app.get("/sessions/:liveShareSessionId/pending-participants", (req: Request, res: Response) => {
   const liveShareSessionId = req.params.liveShareSessionId as string;
-  const list = pendingParticipants.get(liveShareSessionId) ?? [];
+  const sessionMap = pendingParticipants.get(liveShareSessionId);
+  const list = sessionMap ? [...sessionMap.values()] : [];
   res.json({ count: list.length, participants: list });
 });
 

@@ -261,6 +261,13 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
       this.postStartStatus(true, "Session started. Loading projects...");
 
       await serverManager.startServer();
+
+      // Explicitly share port 4000 so guests can reach it via localhost
+      try {
+        await liveShare.shareServer({ port: 4000, displayName: 'CoGEN Server' });
+      } catch {
+        // Non-fatal: Live Share may auto-share the port
+      }
       const projectConfig = await serverManager.httpFetch("/project_details");
       const projects = projectConfig?.projects ?? [];
 

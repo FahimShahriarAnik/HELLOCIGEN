@@ -27,3 +27,6 @@ Thumbs.db
 # config env files
 config.local.ts
 config.local.js
+
+# VS Code extensions
+*.vsix

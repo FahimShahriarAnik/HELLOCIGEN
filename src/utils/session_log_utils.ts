@@ -21,8 +21,8 @@ export async function createSessionLog(
   if (!s) throw new Error("No LiveShare session");
 
   const hostParticipant = {
-    id: 'u1',
-    name: "Host",
+    id: s.user?.id ?? 'u1',
+    name: s.user?.displayName ?? "Host",
     role: roleToString(s.role),
     joined_at: new Date().toISOString(),
     access_level: accessToString(s.access),
@@ -31,8 +31,8 @@ export async function createSessionLog(
   };
 
   const allParticipants = [hostParticipant, ...liveShare.peers.map((p: any, idx: number) => ({
-    id: `u${idx + 2}`,
-    name: `Peer${p.peerNumber}`,
+    id: p.user?.id ?? `u${idx + 2}`,
+    name: p.user?.displayName ?? `Peer${p.peerNumber}`,
     role: roleToString(p.role),
     joined_at: new Date().toISOString(),
     access_level: accessToString(p.access)
