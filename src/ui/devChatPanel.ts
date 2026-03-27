@@ -1,28 +1,18 @@
 import * as vscode from 'vscode';
-import { OpenAI } from 'openai';
-import { Project } from '../models/projectConfig';
+
+const CHAT_SERVER_URL = 'http://localhost:4000';
+const POLL_INTERVAL_MS = 3000;
 
 export class DevChatPanel {
   private static panel: vscode.WebviewPanel | undefined;
-  private static openai: OpenAI | undefined;
-  private static history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  private static systemPrompt = '';
+  private static pollTimer: ReturnType<typeof setInterval> | undefined;
+  private static lastIndex = 0;
+  private static sessionId = '';
+  private static participantName = '';
 
-  static openOrReveal(project: Project, divisions: any[], apiKey: string): void {
-    this.openai = new OpenAI({ apiKey });
-    this.history = [];
-
-    const divisionSummary = divisions.map((d, i) =>
-      `Teammate ${i + 1} (${d.owner_id}): ${d.title}\n` +
-      d.tasks.map((t: any) => `  - ${t.title}`).join('\n')
-    ).join('\n\n');
-
-    this.systemPrompt =
-      `You are CoGEN, an AI project manager assistant for a collaborative coding session.\n` +
-      `Project: ${project.title}\n` +
-      `Description: ${project.description}\n\n` +
-      `Task breakdown:\n${divisionSummary}\n\n` +
-      `Help teammates with questions about their tasks, code, or the project. Be concise.`;
+  static openOrReveal(sessionId: string, participantName: string, projectTitle: string): void {
+    this.sessionId = sessionId;
+    this.participantName = participantName;
 
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.Beside);
@@ -31,46 +21,97 @@ export class DevChatPanel {
 
     this.panel = vscode.window.createWebviewPanel(
       'devChat',
-      `CoGEN — ${project.title}`,
+      `CoGEN Chat — ${projectTitle}`,
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true }
     );
 
-    this.panel.webview.html = this.getHtml(project.title);
-    this.panel.onDidDispose(() => { this.panel = undefined; });
+    this.panel.webview.html = this.getHtml(projectTitle, participantName);
+    this.panel.onDidDispose(() => {
+      this.stopPolling();
+      this.panel = undefined;
+    });
 
     this.panel.webview.onDidReceiveMessage(async msg => {
       if (msg.type === 'send' && msg.text?.trim()) {
-        await this.handleMessage(msg.text.trim());
+        await this.sendMessage(msg.text.trim());
       }
     });
+
+    // Load existing messages and start polling
+    this.lastIndex = 0;
+    this.loadMessages();
+    this.startPolling();
   }
 
-  private static async handleMessage(userText: string): Promise<void> {
-    if (!this.openai || !this.panel) return;
-
-    this.history.push({ role: 'user', content: userText });
-    this.panel.webview.postMessage({ type: 'userMsg', text: userText });
-    this.panel.webview.postMessage({ type: 'thinking' });
-
+  private static async sendMessage(text: string): Promise<void> {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: this.systemPrompt },
-          ...this.history
-        ]
+      const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: text,
+          participant_name: this.participantName
+        })
       });
 
-      const reply = response.choices[0].message.content ?? '';
-      this.history.push({ role: 'assistant', content: reply });
-      this.panel.webview.postMessage({ type: 'assistantMsg', text: reply });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      const data = await resp.json() as any;
+      if (data.messages?.length > 0) {
+        this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
+        this.lastIndex += data.messages.length;
+      }
     } catch (err) {
-      this.panel.webview.postMessage({ type: 'error', text: String(err) });
+      this.panel?.webview.postMessage({ type: 'error', text: String(err) });
     }
   }
 
-  private static getHtml(projectTitle: string): string {
+  private static async loadMessages(): Promise<void> {
+    try {
+      const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=0`);
+      if (!resp.ok) return;
+
+      const data = await resp.json() as any;
+      if (data.messages?.length > 0) {
+        this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
+        this.lastIndex = data.total ?? data.messages.length;
+      }
+    } catch {
+      // Server not ready yet
+    }
+  }
+
+  private static startPolling(): void {
+    this.stopPolling();
+    this.pollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=${this.lastIndex}`);
+        if (!resp.ok) return;
+
+        const data = await resp.json() as any;
+        if (data.messages?.length > 0) {
+          this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
+          this.lastIndex += data.messages.length;
+        }
+      } catch {
+        // Server may not be reachable; keep polling
+      }
+    }, POLL_INTERVAL_MS);
+  }
+
+  private static stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+  }
+
+  private static getHtml(projectTitle: string, participantName: string): string {
+    const escapedTitle = projectTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escapedName = participantName.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -104,37 +145,42 @@ export class DevChatPanel {
       gap: 10px;
     }
     .msg {
-      max-width: 88%;
-      padding: 8px 11px;
-      border-radius: 8px;
+      max-width: 85%;
+      padding: 8px 12px;
+      border-radius: 10px;
       font-size: 12px;
       line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+    .msg .sender {
+      font-size: 10px;
+      font-weight: 700;
+      opacity: 0.7;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
     .msg.user {
       align-self: flex-end;
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
     }
+    .msg.user .sender {
+      text-align: right;
+      opacity: 0.8;
+    }
     .msg.assistant {
       align-self: flex-start;
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-panel-border);
     }
-    .msg.thinking {
-      align-self: flex-start;
-      opacity: 0.5;
-      font-style: italic;
-      font-size: 11px;
-      background: none;
-      padding: 2px 4px;
-    }
     .msg.error {
-      align-self: flex-start;
+      align-self: center;
       color: var(--vscode-errorForeground);
       font-size: 11px;
       background: none;
+      opacity: 0.8;
     }
     .input-row {
       display: flex;
@@ -149,8 +195,8 @@ export class DevChatPanel {
       background: var(--vscode-input-background);
       color: var(--vscode-input-foreground);
       border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
-      border-radius: 4px;
-      padding: 6px 8px;
+      border-radius: 6px;
+      padding: 8px 10px;
       font-family: var(--vscode-font-family);
       font-size: 12px;
       line-height: 1.4;
@@ -163,10 +209,11 @@ export class DevChatPanel {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border: none;
-      border-radius: 4px;
-      padding: 0 14px;
+      border-radius: 6px;
+      padding: 0 16px;
       cursor: pointer;
       font-size: 12px;
+      font-weight: 600;
       flex-shrink: 0;
     }
     button:hover { background: var(--vscode-button-hoverBackground); }
@@ -174,7 +221,7 @@ export class DevChatPanel {
   </style>
 </head>
 <body>
-  <div class="header">CoGEN · ${projectTitle}</div>
+  <div class="header">CoGEN Chat &middot; ${escapedTitle}</div>
   <div class="messages" id="msgs"></div>
   <div class="input-row">
     <textarea id="input" placeholder="Ask about tasks, code, or the project…" rows="1"></textarea>
@@ -185,15 +232,23 @@ export class DevChatPanel {
     const msgs = document.getElementById('msgs');
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
-    let thinkingEl = null;
+    const myName = '${escapedName}';
 
-    function addMsg(text, cls) {
+    function addMsg(msg) {
       const el = document.createElement('div');
-      el.className = 'msg ' + cls;
-      el.textContent = text;
+      el.className = 'msg ' + msg.role;
+
+      const senderDiv = document.createElement('div');
+      senderDiv.className = 'sender';
+      senderDiv.textContent = msg.role === 'assistant' ? 'CoGEN' : (msg.participant_name || 'Unknown');
+
+      const contentDiv = document.createElement('div');
+      contentDiv.textContent = msg.content;
+
+      el.appendChild(senderDiv);
+      el.appendChild(contentDiv);
       msgs.appendChild(el);
       msgs.scrollTop = msgs.scrollHeight;
-      return el;
     }
 
     function send() {
@@ -216,21 +271,15 @@ export class DevChatPanel {
 
     window.addEventListener('message', e => {
       const d = e.data;
-      if (d.type === 'userMsg') {
-        // already shown via optimistic send, skip duplicate
-      }
-      if (d.type === 'thinking') {
-        thinkingEl = addMsg('CoGEN is thinking…', 'thinking');
-      }
-      if (d.type === 'assistantMsg') {
-        if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-        addMsg(d.text, 'assistant');
+      if (d.type === 'newMessages' && d.messages) {
+        d.messages.forEach(m => addMsg(m));
         sendBtn.disabled = false;
-        input.focus();
       }
       if (d.type === 'error') {
-        if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-        addMsg('Error: ' + d.text, 'error');
+        const el = document.createElement('div');
+        el.className = 'msg error';
+        el.textContent = 'Error: ' + d.text;
+        msgs.appendChild(el);
         sendBtn.disabled = false;
       }
     });

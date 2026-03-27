@@ -24,6 +24,13 @@ interface Task {
   subtasks?: Task[];   // optional nested subtasks
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  participant_name?: string;
+  timestamp: string;
+}
+
 export type SessionStatus = "draft" | "dividing" | "active" | "completed";
 
 export interface Division {
@@ -53,6 +60,7 @@ export interface SessionLogDocument {
     [key: string]: unknown;
   };
   division_of_work: Division[];
+  chat_history?: ChatMessage[];
   // Allow extra top-level fields in the future
   // Ideas for more fields: end_time, summary, notes, etc.
   [key: string]: unknown;

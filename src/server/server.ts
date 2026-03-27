@@ -4,6 +4,7 @@ import { getProjectConfigCollection, getSessionLogCollection } from "./db";
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument, Division } from "../models/sessionLog";
 import type { Request, Response } from "express";
+import { OpenAI } from 'openai';
 
 
 // Create Express app
@@ -28,8 +29,12 @@ interface SessionState {
   status: "draft" | "dividing" | "active" | "completed";
   division_of_work?: Division[];
   participants?: Array<{ id: string; name: string }>;
+  project_title?: string;
 }
 const sessionStates = new Map<string, SessionState>();
+
+// In-memory API key for server-side AI chat
+let openaiApiKey: string | undefined;
 
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
@@ -177,7 +182,8 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
       sessionStates.set(session_id, {
         status: "active",
         division_of_work: update.division_of_work as Division[],
-        participants
+        participants,
+        project_title: latest[0].project_title
       });
     }
 
@@ -297,6 +303,142 @@ app.get("/sessions/:liveShareSessionId/pending-participants", (req: Request, res
     res.status(500).json({ ok: false, error: "Failed to fetch pending participants" });
   }
 });
+
+// POST /api-key — Store OpenAI API key for server-side AI chat
+app.post('/api-key', (req: Request, res: Response) => {
+  const { apiKey } = req.body as { apiKey: string };
+  if (!apiKey) return res.status(400).json({ ok: false, error: 'apiKey is required' });
+  openaiApiKey = apiKey;
+  res.json({ ok: true });
+});
+
+// POST /sessions/:session_id/chat — Append a chat message and optionally generate AI response
+app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
+  try {
+    const session_id = req.params.session_id as string;
+    const { role, content, participant_name, skipAi } = req.body as {
+      role: 'user' | 'assistant';
+      content: string;
+      participant_name?: string;
+      skipAi?: boolean;
+    };
+
+    if (!content) return res.status(400).json({ ok: false, error: 'content is required' });
+
+    const coll = await getSessionLogCollection();
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) return res.status(404).json({ ok: false, error: 'Session not found' });
+    const session = latest[0];
+
+    const userMessage = {
+      role: role || 'user',
+      content,
+      participant_name: participant_name || 'Unknown',
+      timestamp: new Date().toISOString()
+    };
+
+    // Append message to chat_history via atomic $push
+    await coll.updateOne(
+      { _id: session._id },
+      { $push: { chat_history: userMessage } } as any
+    );
+
+    const messages: any[] = [userMessage];
+
+    // If it's a user message, we have an API key, and skipAi is not set, generate AI response
+    if (role === 'user' && openaiApiKey && !skipAi) {
+      try {
+        const openai = new OpenAI({ apiKey: openaiApiKey });
+        const systemPrompt = buildSystemPrompt(session);
+        const existingHistory = (session.chat_history || []) as any[];
+
+        const openaiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+          { role: 'system', content: systemPrompt },
+          ...existingHistory.map((m: any) => ({
+            role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+            content: m.participant_name && m.role === 'user'
+              ? `[${m.participant_name}]: ${m.content}`
+              : m.content
+          })),
+          { role: 'user', content: participant_name ? `[${participant_name}]: ${content}` : content }
+        ];
+
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: openaiMessages,
+          max_tokens: 1000
+        });
+
+        const aiContent = response.choices[0].message.content ?? '';
+        const aiMessage = {
+          role: 'assistant' as const,
+          content: aiContent,
+          participant_name: 'CoGEN',
+          timestamp: new Date().toISOString()
+        };
+
+        await coll.updateOne(
+          { _id: session._id },
+          { $push: { chat_history: aiMessage } } as any
+        );
+
+        messages.push(aiMessage);
+      } catch (aiErr) {
+        console.error('AI chat error:', aiErr);
+        // Don't fail the whole request if AI fails — user message is already persisted
+      }
+    }
+
+    res.json({ ok: true, messages });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Failed to process chat message' });
+  }
+});
+
+// GET /sessions/:session_id/chat — Retrieve chat messages (supports polling via ?after=N)
+app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
+  try {
+    const session_id = req.params.session_id as string;
+    const after = parseInt(req.query.after as string, 10) || 0;
+
+    const coll = await getSessionLogCollection();
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) return res.status(404).json({ ok: false, error: 'Session not found' });
+
+    const chatHistory = (latest[0].chat_history || []) as any[];
+    const messages = chatHistory.slice(after);
+
+    res.json({ messages, total: chatHistory.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Failed to fetch chat messages' });
+  }
+});
+
+function buildSystemPrompt(session: any): string {
+  let prompt = `You are CoGEN, an AI project manager assistant for a collaborative coding session.\n`;
+  if (session.project_details?.title) {
+    prompt += `Project: ${session.project_details.title}\n`;
+    prompt += `Description: ${session.project_details.description ?? ''}\n\n`;
+  }
+  if (session.division_of_work?.length > 0) {
+    const divisionSummary = session.division_of_work.map((d: any, i: number) => {
+      const tasks = (d.tasks || []).map((t: any) => `  - ${t.title}`).join('\n');
+      return `Teammate ${i + 1} (${d.owner_id}): ${d.title}\n${tasks}`;
+    }).join('\n\n');
+    prompt += `Task breakdown:\n${divisionSummary}\n\n`;
+  }
+  if (session.participants?.length > 0) {
+    const participantList = session.participants.map((p: any) =>
+      `${p.name} (${p.id})${p.strengths ? ` — Strengths: ${p.strengths}` : ''}${p.weaknesses ? `, Weaknesses: ${p.weaknesses}` : ''}`
+    ).join('\n');
+    prompt += `Participants:\n${participantList}\n\n`;
+  }
+  prompt += `Help teammates with questions about their tasks, code, or the project. Be concise and actionable. `;
+  prompt += `When a message is prefixed with [Name], that's the participant speaking. Address them by name when relevant.`;
+  return prompt;
+}
 
 const port = process.env.PORT ?? 4000;
 app.listen(port, () => {

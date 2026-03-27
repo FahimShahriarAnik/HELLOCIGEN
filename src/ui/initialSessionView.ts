@@ -285,6 +285,19 @@ export class InitialSessionView implements vscode.WebviewViewProvider {
 
       await serverManager.startServer();
 
+      // Forward API key to server for server-side AI chat
+      if (apiKey) {
+        try {
+          await serverManager.httpFetch('/api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey })
+          });
+        } catch {
+          // Non-critical — chat AI will be unavailable but session creation continues
+        }
+      }
+
       // Explicitly share port 4000 so guests can reach it via localhost
       try {
         await liveShare.shareServer({ port: 4000, displayName: 'CoGEN Server' });

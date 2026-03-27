@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as vsls from 'vsls';
 import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
 import { patchSessionLog } from '../utils/session_log_utils';
@@ -71,8 +72,10 @@ export class DevelopmentView {
     TaskTrackerProvider.instance?.setDivisions(divisions);
     await vscode.commands.executeCommand('helloCigen.taskTracker.focus');
 
-    // Open the AI chat panel to the right
-    DevChatPanel.openOrReveal(project, divisions, apiKey ?? '');
+    // Open the shared AI chat panel to the right
+    const liveShareApi = await vsls.getApi();
+    const hostName = liveShareApi?.session?.user?.displayName ?? 'Host';
+    DevChatPanel.openOrReveal(sessionId, hostName, project.title);
 
     vscode.window.showInformationMessage('Session ready. Tasks loaded.');
   }

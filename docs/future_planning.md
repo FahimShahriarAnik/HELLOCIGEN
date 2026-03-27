@@ -114,63 +114,43 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
-## Phase 3: Polish & Persistence
+## Phase 3: Polish & Persistence ✅ COMPLETED
 
 **Branch:** `phase-3-polish` (checkout from `phase-2-session-robustness`)
 **Issues addressed:** 11, 2, 3
+**Status:** Implemented and compiled. Ready for testing.
 
-### 3.1 — Chat History Persistence
+### 3.1 — Chat History Persistence + Real-time Sync ✅
 
-**Goal:** Persist chat messages to MongoDB session doc.
+- Added `ChatMessage` interface (`role`, `content`, `participant_name`, `timestamp`) and `chat_history?: ChatMessage[]` field to `SessionLogDocument` in `src/models/sessionLog.ts`
+- `src/server/server.ts`: new `POST /api-key` endpoint stores OpenAI key in memory for server-side AI
+- `src/server/server.ts`: new `POST /sessions/:id/chat` endpoint appends messages via atomic `$push`, generates AI response server-side if key available (supports `skipAi` flag)
+- `src/server/server.ts`: new `GET /sessions/:id/chat?after=N` endpoint returns messages after index N for polling
+- `src/server/server.ts`: `buildSystemPrompt()` builds AI context from session doc (project details, divisions, participant profiles)
+- `src/server/server.ts`: added `project_title` to in-memory `SessionState` so guests receive it during state polling
+- `src/ui/devChatPanel.ts`: complete rewrite — now accepts `sessionId`, `participantName`, `projectTitle`; POSTs messages to server (server handles AI); polls every 3s for new messages from all participants; UI shows sender names with human messages right-aligned and AI left-aligned
+- `src/ui/developmentView.ts`: gets host name from VSLS API, passes `sessionId + hostName + projectTitle` to `DevChatPanel`
+- `src/ui/guestDevelopmentView.ts`: now accepts `sessionId` + `projectTitle`, auto-opens `DevChatPanel` alongside task view
+- `src/ui/guestOnboardingView.ts`: passes `sessionId` and `state.project_title` through to `GuestDevelopmentView`
+- `src/ui/initialSessionView.ts`: forwards API key to server via `POST /api-key` after server start
+- `src/extension.ts`: same API key forwarding in the legacy `helloCigen.start` flow
+- `src/ui/chatManager2.ts`: gets session ID from Live Share on open; persists each message to server with `skipAi: true` (AI handled locally by chatManager2)
 
-**Files to modify:**
-- `src/models/sessionLog.ts` — add `chat_history` field
-- `src/ui/chatManager2.ts` — save messages to server after each exchange
-- `src/ui/devChatPanel.ts` — same persistence logic
-- `src/server/server.ts` — accept chat history in PATCH endpoint
+### 3.2 — Document Live Share Guest Approval Setting ✅
 
-**Implementation:**
-- Add to `SessionLogDocument`:
-  ```typescript
-  chat_history?: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    participant_name?: string;
-    timestamp: string;
-  }>;
-  ```
-- After each message exchange in `chatManager2` and `devChatPanel`:
-  - `PATCH /sessions/:id` with `{ $push: { chat_history: newMessage } }`
-- On panel open, load existing chat history from the session doc if available
+- `src/ui/newSessionCreationView.ts`: added tip text in session creation header — "To require approval for joining guests, enable `liveshare.guestApprovalRequired` in VS Code settings"
 
-### 3.2 — Document Live Share Guest Approval Setting
+### 3.3 — Dual Participant Counter (Skipped)
 
-**Goal:** Help hosts control who can join.
-
-**Files to create:**
-- Update extension README or create a setup guide section
-
-**Implementation:**
-- Add a note in the session creation UI (tooltip or info text): "To require approval for joining guests, enable `liveshare.guestApprovalRequired` in VS Code settings"
-- No code change needed — just UI guidance
-
-### 3.3 — Dual Participant Counter (Optional)
-
-**Goal:** Show "Connected: X | Confirmed: Y" in host's session creation view.
-
-**Files to modify:**
-- `src/ui/newSessionCreationView.ts` — add connected count from Live Share peers
-
-**Implementation:**
-- In the polling interval, also read `liveShare.peers.length` for connected count
-- Update UI to show both numbers: "Connected: 3 | Confirmed: 2"
-- Helps host know who's connected but hasn't submitted profile yet
+- Not implemented — deferred to a future iteration
 
 ### 3.4 — Verification
 
-- [ ] Open chat, send messages, close panel, reopen → history loaded from MongoDB
-- [ ] Check MongoDB doc → `chat_history` array populated with timestamps
-- [ ] Host sees "Connected: X | Confirmed: Y" during session setup
+- [ ] Open shared chat as host, send message → AI response appears
+- [ ] Open shared chat as guest, send message → AI response appears, host sees it via polling
+- [ ] Close chat panel, reopen → history loaded from MongoDB
+- [ ] Check MongoDB doc → `chat_history` array populated with sender names and timestamps
+- [ ] Host session creation view shows guest approval tip
 - [ ] Build VSIX: `npx vsce package`
 
 ---
@@ -179,11 +159,13 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
 - **Phase 2 is complete** — early draft doc creation, server auto-restart, API key pre-flight, folder guard all implemented
+- **Phase 3 is complete** — chat persistence with real-time sync, server-side AI, guest approval tooltip all implemented
 - Each phase must compile and produce a working VSIX before moving to the next
 - The `status` field is now persisted to MongoDB from doc creation (`"draft"` → `"dividing"` → `"active"`)
 - The `initialSessionView` flow now creates a draft doc immediately; `newSessionCreationView` PATCHes it to `"dividing"` (no longer POSTs a new doc)
 - The legacy `helloCigen.start` command flow still uses the old `createSessionLog` POST path
-- All OpenAI API calls are host-only; guests never need the key
+- OpenAI API key is forwarded from the extension host to the Express server via `POST /api-key`; server-side AI handles all chat responses so guests don't need the key
 - `peerNumber` is the stable unique key for participant matching (replaces nullable `userId`)
-- Chat history must be synced across all participants (not just persisted) — when Phase 1 guest sync is in place, chat sync should piggyback on the same state mechanism
+- Chat is synced across all participants via server polling (3s interval in `DevChatPanel`); `chatManager2` persists with `skipAi: true` to avoid duplicate AI calls
+- `DevChatPanel` auto-opens for both host (from `DevelopmentView`) and guests (from `GuestDevelopmentView`) after session becomes active
 - Auto-dismissing notifications pattern (`withProgress` + timeout) is now used for the API key found notification; can be applied to other informational popups as needed

@@ -1,5 +1,6 @@
 // chatmanager2.ts
 import * as vscode from 'vscode';
+import * as vsls from 'vsls';
 import { OpenAI } from 'openai';
 import { ServerManager } from '../serverManager';
 
@@ -13,6 +14,8 @@ export class ChatManager2 {
   private projectDetails: any = null;
   private selectedProject: string | null = null;
   private options: Record<string, boolean> = {};
+  private sessionId: string | undefined;
+  private participantName: string = 'Host';
 
   constructor(private context: vscode.ExtensionContext, private serverManager: ServerManager) {
     ChatManager2.instance = this;
@@ -26,6 +29,15 @@ export class ChatManager2 {
     }
 
     this.openai = new OpenAI({ apiKey });
+
+    // Get session ID from Live Share for persistence
+    try {
+      const liveShare = await vsls.getApi();
+      this.sessionId = liveShare?.session?.id ?? undefined;
+      this.participantName = liveShare?.session?.user?.displayName ?? 'Host';
+    } catch {
+      // Non-critical — chat works without persistence
+    }
 
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.Beside);
@@ -245,6 +257,23 @@ Then suggest next steps for team kickoff.`;
     this.chatHistory.push({ role, content });
     if (this.chatHistory.length > 40) {
       this.chatHistory.splice(0, 10);
+    }
+
+    // Persist to server if a session is active (skipAi: true since chatManager2 handles AI locally)
+    if (this.sessionId && (role === 'user' || role === 'assistant')) {
+      this.persistMessage(role, content, role === 'assistant' ? 'CoGEN' : this.participantName);
+    }
+  }
+
+  private async persistMessage(role: string, content: string, name: string): Promise<void> {
+    try {
+      await fetch(`http://localhost:4000/sessions/${this.sessionId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, content, participant_name: name, skipAi: true })
+      });
+    } catch {
+      // Non-critical — local chat continues regardless
     }
   }
 

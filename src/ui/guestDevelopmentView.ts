@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TaskTrackerProvider } from './taskTrackerProvider';
+import { DevChatPanel } from './devChatPanel';
 
 interface Division {
   id: string;
@@ -25,7 +26,9 @@ export class GuestDevelopmentView {
     context: vscode.ExtensionContext,
     guestName: string,
     divisions: Division[],
-    participants: Participant[]
+    participants: Participant[],
+    sessionId?: string,
+    projectTitle?: string
   ): void {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
@@ -54,6 +57,11 @@ export class GuestDevelopmentView {
       () => {},
       () => {} // sidebar may not be visible yet
     );
+
+    // Open the shared AI chat panel alongside the development view
+    if (sessionId) {
+      DevChatPanel.openOrReveal(sessionId, guestName, projectTitle || 'Project');
+    }
   }
 
   private static getHtml(guestName: string, divisions: Division[], participants: Participant[]): string {

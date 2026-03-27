@@ -249,6 +249,9 @@ export class NewSessionCreationView {
       &nbsp;·&nbsp;
       Participants Joined: <strong id="joinedCount">—</strong>
     </p>
+    <p class="meta" style="margin-top:6px;opacity:0.55;font-size:11px;">
+      Tip: To require approval for joining guests, enable <code>liveshare.guestApprovalRequired</code> in VS Code settings.
+    </p>
   </div>
 
   <div class="profile-section">

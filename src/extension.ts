@@ -113,6 +113,16 @@ export function activate(context: vscode.ExtensionContext) {
       let projectDetails: any;
       try {
         await serverManager.startServer();
+
+        // Forward API key to server for server-side AI chat
+        if (apiKey) {
+          await serverManager.httpFetch('/api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey })
+          }).catch(() => {}); // Non-critical
+        }
+
         projectDetails = await serverManager.httpFetch("/project_details");
         output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
       } catch (err) {

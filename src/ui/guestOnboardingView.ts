@@ -95,7 +95,9 @@ export class GuestOnboardingView {
             context,
             guestName,
             state.division_of_work ?? [],
-            state.participants ?? []
+            state.participants ?? [],
+            sessionId,
+            state.project_title ?? ''
           );
         }
       } catch {
