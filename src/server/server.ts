@@ -304,6 +304,51 @@ app.get("/sessions/:liveShareSessionId/pending-participants", (req: Request, res
   }
 });
 
+// GET /sessions/:session_id/divisions — Return current division_of_work for polling
+app.get('/sessions/:session_id/divisions', async (req: Request, res: Response) => {
+  try {
+    const session_id = req.params.session_id as string;
+    const coll = await getSessionLogCollection();
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Session not found' });
+    }
+
+    res.json({ ok: true, division_of_work: latest[0].division_of_work ?? [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Failed to fetch divisions' });
+  }
+});
+
+// PATCH /sessions/:session_id/divisions — Update task statuses within division_of_work
+app.patch('/sessions/:session_id/divisions', async (req: Request, res: Response) => {
+  try {
+    const session_id = req.params.session_id as string;
+    const { division_of_work } = req.body as { division_of_work: Division[] };
+
+    if (!division_of_work) {
+      return res.status(400).json({ ok: false, error: 'division_of_work is required' });
+    }
+
+    const coll = await getSessionLogCollection();
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Session not found' });
+    }
+
+    await coll.updateOne(
+      { _id: latest[0]._id },
+      { $set: { division_of_work } }
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Failed to update divisions' });
+  }
+});
+
 // POST /api-key — Store OpenAI API key for server-side AI chat
 app.post('/api-key', (req: Request, res: Response) => {
   const { apiKey } = req.body as { apiKey: string };

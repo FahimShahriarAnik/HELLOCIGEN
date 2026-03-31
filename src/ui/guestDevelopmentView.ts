@@ -42,9 +42,12 @@ export class GuestDevelopmentView {
       { enableScripts: true }
     );
 
-    // Populate task tracker sidebar for guest
+    // Populate task tracker sidebar for guest and connect to session for sync
     TaskTrackerProvider.instance?.setParticipants(participants);
     TaskTrackerProvider.instance?.setDivisions(castDivisions(divisions));
+    if (sessionId) {
+      TaskTrackerProvider.instance?.setSession(sessionId);
+    }
 
     this.panel.webview.html = this.getHtml(guestName, divisions, participants);
 

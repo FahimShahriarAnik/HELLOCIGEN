@@ -155,11 +155,90 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
+## Phase 4: Synced Task Tracking ✅ COMPLETED
+
+**Branch:** `retrying_the_chat_feature` (checkout from `phase-3-polish`)
+**Issues addressed:** Task Tracker updates are local-only — toggling a task on one machine is never persisted or broadcast to other participants.
+**Status:** Implemented and compiled. Ready for testing.
+
+### 4.1 — Server Endpoints for Division Updates ✅
+
+- Added `GET /sessions/:session_id/divisions` in `src/server/server.ts` — returns current `division_of_work` from MongoDB
+- Added `PATCH /sessions/:session_id/divisions` in `src/server/server.ts` — accepts updated `division_of_work` array, writes to MongoDB via `$set`
+
+### 4.2 — TaskTrackerProvider Write-back ✅
+
+- Added `setSession(sessionId: string)` method to `src/ui/taskTrackerProvider.ts`
+- `_toggleTask` and `_toggleDivision` now call `_persistDivisions()` to PATCH the server after every toggle
+- `reassignDivision` also persists via the same endpoint (replaces the old TODO)
+
+### 4.3 — TaskTrackerProvider Polling ✅
+
+- Added polling loop in `src/ui/taskTrackerProvider.ts` — polls `GET /sessions/:id/divisions` every 4 seconds
+- Uses `divisionsFingerprint()` to compare fetched divisions with local state; refreshes UI only if changed
+- Debounce: `_skipNextPoll` flag set after local changes to avoid flicker
+
+### 4.4 — Wire Session ID to TaskTrackerProvider ✅
+
+- `src/ui/developmentView.ts` — calls `TaskTrackerProvider.instance?.setSession(sessionId)` after setting divisions
+- `src/ui/guestOnboardingView.ts` — calls `setSession(sessionId)` when guest transitions to active
+- `src/ui/guestDevelopmentView.ts` — calls `setSession(sessionId)` after setting divisions/participants
+
+### 4.5 — Verification
+
+- [ ] Start a session with host + guest
+- [ ] Host toggles a task → guest's tracker updates within 5 seconds
+- [ ] Guest toggles a task → host's tracker updates within 5 seconds
+- [ ] Restart extension → task states persist (fetched from MongoDB on reconnect)
+- [ ] Build VSIX: `npx vsce package`
+
+---
+
+## Phase 5: Unified Team Chat with @AI
+
+**Branch:** `phase-5-team-chat` (checkout from `phase-4-synced-tasks`)
+**Issues addressed:** Two competing chat implementations (`chatManager2` standalone + `DevChatPanel` collaborative); AI auto-responds to every message instead of on-demand.
+**Status:** Planned
+
+### 5.1 — @AI Trigger in Server Chat Endpoint
+
+- Modify `POST /sessions/:session_id/chat` in `src/server/server.ts` — change AI trigger from `role === 'user'` to detecting `@AI` (case-insensitive) in message content
+- Keep `buildSystemPrompt()` as-is for full session context (project, divisions, participants with strengths/weaknesses)
+- Keep `skipAi` param as a fallback override
+
+### 5.2 — DevChatPanel UI Update
+
+- Update placeholder text in `src/ui/devChatPanel.ts` to `"Type a message... Use @AI to ask the AI"`
+- No other UI changes needed — existing polling (3s), message attribution, and styling stay the same
+
+### 5.3 — Remove chatManager2 as Primary Chat
+
+- Remove or repurpose `helloCigen.openChat` command in `src/extension.ts`
+- The "Divide into 3 Chunks" logic in `chatManager2` is already handled separately by `DivisionReviewPanel` in the session flow — chatManager2's version is redundant
+
+### 5.4 — Existing Flows Unchanged
+
+- **Guest flow stays as-is:** GuestOnboardingView (name + strengths/weaknesses) → polls → GuestDevelopmentView (task cards with assignments highlighted) → DevChatPanel opens alongside → TaskTracker in sidebar
+- **Host flow stays as-is:** session creation → division review → DevelopmentView → DevChatPanel opens alongside
+- API key flow stays the same — host sends key to server via `POST /api-key` at session start (already implemented)
+
+### 5.5 — Verification
+
+- [ ] Start a session, confirm division
+- [ ] Verify DevChatPanel opens on both host and guest
+- [ ] Host sends a regular message → guest sees it within 3 seconds, no AI response
+- [ ] Guest sends `@AI what should I work on first?` → AI response appears for everyone
+- [ ] Guest sends a regular message (no @AI) → no AI response, just the message shown to all
+- [ ] Build VSIX: `npx vsce package`
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
 - **Phase 2 is complete** — early draft doc creation, server auto-restart, API key pre-flight, folder guard all implemented
 - **Phase 3 is complete** — chat persistence with real-time sync, server-side AI, guest approval tooltip all implemented
+- **Phase 4 is complete** — synced task tracking with server persistence (PATCH/GET divisions endpoints), 4s polling with fingerprint-based diffing, debounce on local changes, session ID wired through host and guest flows
 - Each phase must compile and produce a working VSIX before moving to the next
 - The `status` field is now persisted to MongoDB from doc creation (`"draft"` → `"dividing"` → `"active"`)
 - The `initialSessionView` flow now creates a draft doc immediately; `newSessionCreationView` PATCHes it to `"dividing"` (no longer POSTs a new doc)

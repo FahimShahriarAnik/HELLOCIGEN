@@ -68,8 +68,9 @@ export class DevelopmentView {
       divisions = computed;
     }
 
-    // Populate task tracker and reveal it in the Explorer sidebar
+    // Populate task tracker, connect to session for sync, and reveal in sidebar
     TaskTrackerProvider.instance?.setDivisions(divisions);
+    TaskTrackerProvider.instance?.setSession(sessionId);
     await vscode.commands.executeCommand('helloCigen.taskTracker.focus');
 
     // Open the shared AI chat panel to the right

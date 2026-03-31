@@ -3,6 +3,9 @@ import { AiDivision } from '../utils/aiUtils';
 
 type Status = 'todo' | 'in progress' | 'done';
 
+const POLL_INTERVAL_MS = 4000;
+const SERVER_URL = 'http://localhost:4000';
+
 interface TrackedTask {
   id: string;
   title: string;
@@ -30,6 +33,18 @@ function divisionStatus(tasks: TrackedTask[]): Status {
   return 'todo';
 }
 
+/** Serialize divisions to a comparable string for diff detection */
+function divisionsFingerprint(divisions: TrackedDivision[]): string {
+  return JSON.stringify(divisions.map(d => ({
+    id: d.id,
+    owner_id: d.owner_id,
+    tasks: d.tasks.map(t => ({
+      id: t.id, status: t.status,
+      subtasks: t.subtasks?.map(s => ({ id: s.id, status: s.status }))
+    }))
+  })));
+}
+
 export class TaskTrackerProvider implements vscode.WebviewViewProvider {
   static readonly viewId = 'helloCigen.taskTracker';
   static instance: TaskTrackerProvider | undefined;
@@ -37,6 +52,10 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
   private _view: vscode.WebviewView | undefined;
   private _divisions: TrackedDivision[] = [];
   private _participants: Array<{ id: string; name: string }> = [];
+  private _sessionId: string | undefined;
+  private _pollTimer: ReturnType<typeof setInterval> | undefined;
+  private _lastFingerprint: string = '';
+  private _skipNextPoll = false; // debounce after local change
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView;
@@ -54,7 +73,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
         const div = this._divisions.find(d => d.id === msg.divisionId);
         if (div) {
           div.owner_id = msg.newOwnerId;
-          // TODO: persist to MongoDB (needs sessionId + serverMgr — future enhancement)
+          this._persistDivisions();
         }
       }
     });
@@ -80,7 +99,74 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
         }))
       }))
     }));
+    this._lastFingerprint = divisionsFingerprint(this._divisions);
     this._refresh();
+  }
+
+  /** Connect the tracker to a session for server sync */
+  setSession(sessionId: string): void {
+    this._sessionId = sessionId;
+    this._startPolling();
+  }
+
+  dispose(): void {
+    this._stopPolling();
+  }
+
+  private _startPolling(): void {
+    this._stopPolling();
+    if (!this._sessionId) return;
+
+    this._pollTimer = setInterval(async () => {
+      if (this._skipNextPoll) {
+        this._skipNextPoll = false;
+        return;
+      }
+      await this._fetchDivisions();
+    }, POLL_INTERVAL_MS);
+  }
+
+  private _stopPolling(): void {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = undefined;
+    }
+  }
+
+  private async _fetchDivisions(): Promise<void> {
+    if (!this._sessionId) return;
+    try {
+      const resp = await fetch(`${SERVER_URL}/sessions/${this._sessionId}/divisions`);
+      if (!resp.ok) return;
+      const data = await resp.json() as any;
+      if (!data.division_of_work?.length) return;
+
+      const incoming = data.division_of_work as TrackedDivision[];
+      const incomingFp = divisionsFingerprint(incoming);
+
+      if (incomingFp !== this._lastFingerprint) {
+        this._divisions = incoming;
+        this._lastFingerprint = incomingFp;
+        this._refresh();
+      }
+    } catch {
+      // Server may not be reachable; keep polling
+    }
+  }
+
+  private async _persistDivisions(): Promise<void> {
+    if (!this._sessionId) return;
+    this._skipNextPoll = true;
+    this._lastFingerprint = divisionsFingerprint(this._divisions);
+    try {
+      await fetch(`${SERVER_URL}/sessions/${this._sessionId}/divisions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ division_of_work: this._divisions })
+      });
+    } catch {
+      // Non-critical — local state is already updated
+    }
   }
 
   private _toggleTask(divisionId: string, taskId: string, subtaskId?: string): void {
@@ -103,6 +189,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       }
     }
     this._refresh();
+    this._persistDivisions();
   }
 
   private _toggleDivision(divisionId: string): void {
@@ -115,6 +202,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       t.subtasks?.forEach(s => { s.status = next; });
     });
     this._refresh();
+    this._persistDivisions();
   }
 
   private _refresh(): void {

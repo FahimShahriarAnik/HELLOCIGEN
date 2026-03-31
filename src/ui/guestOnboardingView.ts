@@ -83,10 +83,11 @@ export class GuestOnboardingView {
         if (state.status === 'active') {
           this.stopPolling();
 
-          // Populate task tracker for guest
+          // Populate task tracker for guest and connect to session for sync
           if (state.division_of_work && state.participants) {
             TaskTrackerProvider.instance?.setParticipants(state.participants);
             TaskTrackerProvider.instance?.setDivisions(state.division_of_work as any);
+            TaskTrackerProvider.instance?.setSession(sessionId);
           }
 
           // Transition to guest development view
