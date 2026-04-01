@@ -4,7 +4,6 @@ import { serverManager } from "./serverManager";
 import { createSessionLog } from "./utils/session_log_utils";
 import { Role } from "./utils/liveshareHelpers";
 
-import { ChatManager2 } from "./ui/chatManager2";
 import { InitialSessionView } from "./ui/initialSessionView";
 import { TaskTrackerProvider } from "./ui/taskTrackerProvider";
 import { GuestOnboardingView } from "./ui/guestOnboardingView";
@@ -27,7 +26,6 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   const initialSessionProvider = new InitialSessionView(context);
-  const chatManager2 = new ChatManager2(context, serverManager);
   const taskTrackerProvider = new TaskTrackerProvider();
   TaskTrackerProvider.instance = taskTrackerProvider;
 
@@ -210,13 +208,6 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  const openChat2Cmd = vscode.commands.registerCommand(
-    "helloCigen.openChat",
-    () => {
-      chatManager2.openChat();
-    }
-  );
-
   const setApiKeyCmd = vscode.commands.registerCommand(
     "helloCigen.setApiKey",
     async () => {
@@ -243,23 +234,10 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  const sendActiveFileCmd = vscode.commands.registerCommand(
-    "helloCigen.sendActiveFile",
-    async () => {
-      try {
-        await chatManager2.sendActiveFile();
-      } catch (err) {
-        vscode.window.showErrorMessage(`Failed to send active file: ${err}`);
-      }
-    }
-  );
-
   context.subscriptions.push(disposable);
   context.subscriptions.push(restartServerCmd);
-  context.subscriptions.push(openChat2Cmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
-  context.subscriptions.push(sendActiveFileCmd);
 }
 
 export function deactivate() {

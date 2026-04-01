@@ -9,6 +9,7 @@ export class DevChatPanel {
   private static lastIndex = 0;
   private static sessionId = '';
   private static participantName = '';
+  private static sending = false;
 
   static openOrReveal(sessionId: string, participantName: string, projectTitle: string): void {
     this.sessionId = sessionId;
@@ -45,6 +46,7 @@ export class DevChatPanel {
   }
 
   private static async sendMessage(text: string): Promise<void> {
+    this.sending = true;
     try {
       const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat`, {
         method: 'POST',
@@ -61,10 +63,12 @@ export class DevChatPanel {
       const data = await resp.json() as any;
       if (data.messages?.length > 0) {
         this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
-        this.lastIndex += data.messages.length;
+        this.lastIndex = data.total ?? (this.lastIndex + data.messages.length);
       }
     } catch (err) {
       this.panel?.webview.postMessage({ type: 'error', text: String(err) });
+    } finally {
+      this.sending = false;
     }
   }
 
@@ -86,6 +90,7 @@ export class DevChatPanel {
   private static startPolling(): void {
     this.stopPolling();
     this.pollTimer = setInterval(async () => {
+      if (this.sending) return;
       try {
         const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=${this.lastIndex}`);
         if (!resp.ok) return;
@@ -224,7 +229,7 @@ export class DevChatPanel {
   <div class="header">CoGEN Chat &middot; ${escapedTitle}</div>
   <div class="messages" id="msgs"></div>
   <div class="input-row">
-    <textarea id="input" placeholder="Ask about tasks, code, or the project…" rows="1"></textarea>
+    <textarea id="input" placeholder="Type a message... Use @AI to ask the AI" rows="1"></textarea>
     <button id="sendBtn">Send</button>
   </div>
   <script>

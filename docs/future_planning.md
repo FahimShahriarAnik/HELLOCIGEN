@@ -194,33 +194,34 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
-## Phase 5: Unified Team Chat with @AI
+## Phase 5: Unified Team Chat with @AI ✅ COMPLETED
 
-**Branch:** `phase-5-team-chat` (checkout from `phase-4-synced-tasks`)
+**Branch:** `retrying_the_chat_feature`
 **Issues addressed:** Two competing chat implementations (`chatManager2` standalone + `DevChatPanel` collaborative); AI auto-responds to every message instead of on-demand.
-**Status:** Planned
+**Status:** Implemented and compiled. Ready for testing.
 
-### 5.1 — @AI Trigger in Server Chat Endpoint
+### 5.1 — @AI Trigger in Server Chat Endpoint ✅
 
-- Modify `POST /sessions/:session_id/chat` in `src/server/server.ts` — change AI trigger from `role === 'user'` to detecting `@AI` (case-insensitive) in message content
-- Keep `buildSystemPrompt()` as-is for full session context (project, divisions, participants with strengths/weaknesses)
-- Keep `skipAi` param as a fallback override
+- Changed AI trigger in `POST /sessions/:session_id/chat` from `role === 'user'` to `/@ai\b/i` regex detection on message content
+- Updated `buildSystemPrompt()` to explain CoGEN's role: only invoked on @AI mentions, rest of chat is human-to-human context
+- Kept `skipAi` param as a fallback override
 
-### 5.2 — DevChatPanel UI Update
+### 5.2 — DevChatPanel UI Update ✅
 
-- Update placeholder text in `src/ui/devChatPanel.ts` to `"Type a message... Use @AI to ask the AI"`
-- No other UI changes needed — existing polling (3s), message attribution, and styling stay the same
+- Updated placeholder text in `src/ui/devChatPanel.ts` to `"Type a message... Use @AI to ask the AI"`
+- No other UI changes — existing polling (3s), message attribution, and styling unchanged
 
-### 5.3 — Remove chatManager2 as Primary Chat
+### 5.3 — Remove chatManager2 ✅
 
-- Remove or repurpose `helloCigen.openChat` command in `src/extension.ts`
-- The "Divide into 3 Chunks" logic in `chatManager2` is already handled separately by `DivisionReviewPanel` in the session flow — chatManager2's version is redundant
+- Deleted `src/ui/chatManager2.ts` and legacy `src/chatManager.ts`
+- Removed `ChatManager2` import, instantiation, and `openChat`/`sendActiveFile` command handlers from `src/extension.ts`
+- Removed `helloCigen.openChat`, `helloCigen.openChat2`, `helloCigen.sendActiveFile` from `package.json` commands and activation events (preserved in `_commented_out_commands` key for reference)
 
-### 5.4 — Existing Flows Unchanged
+### 5.4 — Existing Flows Unchanged ✅
 
-- **Guest flow stays as-is:** GuestOnboardingView (name + strengths/weaknesses) → polls → GuestDevelopmentView (task cards with assignments highlighted) → DevChatPanel opens alongside → TaskTracker in sidebar
+- **Guest flow stays as-is:** GuestOnboardingView → polls → GuestDevelopmentView → DevChatPanel opens alongside → TaskTracker in sidebar
 - **Host flow stays as-is:** session creation → division review → DevelopmentView → DevChatPanel opens alongside
-- API key flow stays the same — host sends key to server via `POST /api-key` at session start (already implemented)
+- API key flow unchanged — host sends key to server via `POST /api-key` at session start
 
 ### 5.5 — Verification
 
@@ -231,6 +232,17 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 - [ ] Guest sends a regular message (no @AI) → no AI response, just the message shown to all
 - [ ] Build VSIX: `npx vsce package`
 
+### 5.6 — Bug Fix: Duplicate Messages on @AI Calls ✅
+
+- **Root cause:** When sender POSTs an `@AI` message, OpenAI takes several seconds to respond. The 3s poll fires during that wait, picks up the user message from MongoDB, and displays it. Then the POST returns with `[userMsg, aiMsg]`, displaying the user message a second time and corrupting `lastIndex`.
+- **Fix — client (`src/ui/devChatPanel.ts`):** Added `sending` flag; polls skip while a POST is in-flight. `lastIndex` now uses `total` from server response instead of incrementing blindly.
+- **Fix — server (`src/server/server.ts`):** `POST /sessions/:id/chat` response now returns `total` (actual `chat_history` length after appended messages) so the client can sync its index accurately.
+
+### 5.7 — Notes
+
+- **Token cost scaling:** Full `chat_history` is sent to OpenAI on every `@AI` call (stateless — no OpenAI-side memory). Token costs grow with conversation length. Consider adding a server-side cap (e.g., last N messages) in a future iteration to avoid hitting token limits on long sessions.
+- **Post-Phase 5 chat landscape:** `chatManager2` is removed. `DivisionReviewPanel` handles task division (pre-active), `DevChatPanel` is the sole team chat (active development).
+
 ---
 
 ## Notes
@@ -239,6 +251,7 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 - **Phase 2 is complete** — early draft doc creation, server auto-restart, API key pre-flight, folder guard all implemented
 - **Phase 3 is complete** — chat persistence with real-time sync, server-side AI, guest approval tooltip all implemented
 - **Phase 4 is complete** — synced task tracking with server persistence (PATCH/GET divisions endpoints), 4s polling with fingerprint-based diffing, debounce on local changes, session ID wired through host and guest flows
+- **Phase 5 is complete** — unified team chat with @AI mention trigger, chatManager2 and legacy chatManager deleted, DevChatPanel is the sole chat, system prompt updated for on-demand AI role
 - Each phase must compile and produce a working VSIX before moving to the next
 - The `status` field is now persisted to MongoDB from doc creation (`"draft"` → `"dividing"` → `"active"`)
 - The `initialSessionView` flow now creates a draft doc immediately; `newSessionCreationView` PATCHes it to `"dividing"` (no longer POSTs a new doc)

@@ -2,7 +2,7 @@
   "name": "hello-cigen",
   "displayName": "HELLOCIGEN – Live Share API Testing",
   "description": "Testing VS Code Live Share APIs for collaborative sessions",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.107.0"
@@ -12,9 +12,7 @@
     "onView:helloCigen.initialSession",
     "onView:helloCigen.sidebar",
     "onCommand:helloCigen.launch",
-    "onCommand:helloCigen.start",
-    "onCommand:helloCigen.openChat",
-    "onCommand:helloCigen.openChat2"
+    "onCommand:helloCigen.start"
   ],
   "contributes": {
     "viewsContainers": {
@@ -46,10 +44,6 @@
         "title": "HELLOCIGEN: Launch HelloCigen"
       },
       {
-        "command": "helloCigen.openChat2",
-        "title": "CIGEN: Open Project-Aware AI Chat"
-      },
-      {
         "command": "helloCigen.start",
         "title": "HELLOCIGEN: Create a Live Share Session"
       },
@@ -58,26 +52,22 @@
         "title": "HELLOCIGEN: Join a Live Share Session"
       },
       {
-        "command": "helloCigen.openChat",
-        "title": "HELLOCIGEN: Open Chat"
-      },
-      {
         "command": "helloCigen.setApiKey",
         "title": "HELLOCIGEN: Set OpenAI API Key"
       },
       {
         "command": "helloCigen.clearApiKey",
         "title": "HELLOCIGEN: Clear OpenAI API Key"
-      }
-      ,
-      {
-        "command": "helloCigen.sendActiveFile",
-        "title": "HELLOCIGEN: Send Active File to Model"
       },
       {
         "command": "helloCigen.restartServer",
         "title": "HELLOCIGEN: Restart Server"
       }
+    ],
+    "_commented_out_commands": [
+      "helloCigen.openChat — removed in Phase 5 (chatManager2 deleted, DevChatPanel is sole chat)",
+      "helloCigen.openChat2 — removed in Phase 5 (same as openChat)",
+      "helloCigen.sendActiveFile — removed in Phase 5 (was tied to chatManager2)"
     ],
     "menus": {
       "view/title": []

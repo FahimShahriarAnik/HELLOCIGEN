@@ -390,8 +390,9 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
 
     const messages: any[] = [userMessage];
 
-    // If it's a user message, we have an API key, and skipAi is not set, generate AI response
-    if (role === 'user' && openaiApiKey && !skipAi) {
+    // Only generate AI response when the message contains @AI (case-insensitive)
+    const mentionsAi = /@ai\b/i.test(content);
+    if (role === 'user' && openaiApiKey && mentionsAi && !skipAi) {
       try {
         const openai = new OpenAI({ apiKey: openaiApiKey });
         const systemPrompt = buildSystemPrompt(session);
@@ -434,7 +435,9 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ ok: true, messages });
+    const existingCount = (session.chat_history?.length ?? 0);
+    const total = existingCount + messages.length;
+    res.json({ ok: true, messages, total });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: 'Failed to process chat message' });
@@ -462,7 +465,9 @@ app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
 });
 
 function buildSystemPrompt(session: any): string {
-  let prompt = `You are CoGEN, an AI project manager assistant for a collaborative coding session.\n`;
+  let prompt = `You are CoGEN, an AI project manager assistant embedded in a collaborative coding session's team chat.\n`;
+  prompt += `You are only invoked when a participant mentions @AI in their message. The rest of the chat is human-to-human conversation you can see for context.\n`;
+  prompt += `Respond helpfully and concisely to the question or request in the message that mentioned you.\n\n`;
   if (session.project_details?.title) {
     prompt += `Project: ${session.project_details.title}\n`;
     prompt += `Description: ${session.project_details.description ?? ''}\n\n`;

@@ -28,9 +28,9 @@ extension.ts  (activation & command handlers)
    ↓         ↓
 serverManager.ts   UI Views (webview panels)
    ↓                    ↓
-Express server      chatManager2.ts
+Express server      devChatPanel.ts
    ↓                    ↓
-MongoDB          OpenAI GPT-4 API
+MongoDB          OpenAI GPT-4 API (via @AI mention)
 (session_logs, projectConfigs)
 ```
 
@@ -44,7 +44,7 @@ MongoDB          OpenAI GPT-4 API
 | `src/server/db.ts` | MongoDB connection; collections: `projectConfigs`, `sessionLogs` |
 | `src/models/sessionLog.ts` | `SessionLogDocument`, `Participant`, `FileTrackingEntry` types |
 | `src/models/projectConfig.ts` | `Project` and `ProjectConfigDocument` types |
-| `src/ui/chatManager2.ts` | Project-aware AI chat with GPT-4 |
+| `src/ui/devChatPanel.ts` | Unified team chat panel; @AI triggers server-side GPT-4 |
 | `src/ui/guestOnboardingView.ts` | Guest profile form + polling for session state transitions |
 | `src/ui/guestDevelopmentView.ts` | Guest post-division view showing assigned tasks |
 | `src/ui/taskTrackerProvider.ts` | Sidebar task tracker (singleton, shared by host & guests) |
@@ -58,10 +58,9 @@ MongoDB          OpenAI GPT-4 API
 
 Registered commands (prefix `helloCigen.`):
 - `start` — Creates a Live Share session and logs participants to MongoDB
-- `openChat` — Opens the project-aware AI chat panel
 - `setApiKey` — Stores OpenAI API key in VS Code secrets
 - `clearApiKey` — Removes the stored OpenAI API key
-- `sendActiveFile` — Sends the active editor file into the chat context
+- `restartServer` — Restarts the Express server child process
 
 ---
 
@@ -117,12 +116,12 @@ Output goes to `out/` (git-ignored). Extension main entry: `./out/extension.js`.
 3. Guest polls `GET /sessions/:id/state` every 5s
 4. When state = `"active"` → `GuestDevelopmentView` opens, `TaskTrackerProvider` populated
 
-### AI Chat (chatManager2)
-1. User selects project from dropdown
-2. Clicks "Divide into 3 Chunks"
-3. GPT-4 returns task breakdown JSON
-4. User continues chat for refinements
-5. Active editor file content can be injected as context
+### Team Chat (DevChatPanel)
+1. `DevChatPanel` opens alongside development view for both host and guests
+2. All participants chat in real-time via server polling (3s interval)
+3. Messages mentioning `@AI` (case-insensitive) trigger server-side GPT-4 response
+4. Regular messages (no @AI) are human-to-human — no AI invocation
+5. Chat history persisted to MongoDB `chat_history` array
 
 ---
 
@@ -135,6 +134,6 @@ Output goes to `out/` (git-ignored). Extension main entry: `./out/extension.js`.
 
 ## Notes
 
-- `src/ui/chatManager2.ts` is the sole chat implementation
-- Chat history is capped at 40 messages in chatManager2
-- System prompt positions GPT-4 as "CoGEN Project Manager"
+- `src/ui/devChatPanel.ts` is the sole chat implementation (chatManager2 removed in Phase 5)
+- AI is invoked only when a message contains `@AI` — system prompt positions GPT-4 as "CoGEN" project manager
+- Task tracking is synced across participants via server polling (4s interval) with fingerprint-based diffing
