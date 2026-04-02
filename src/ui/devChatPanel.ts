@@ -13,6 +13,14 @@ export class DevChatPanel {
   private static lastSeenId = '0';            // ObjectId hex cursor
   private static seenIds = new Set<string>(); // dedup guard
 
+  static dispose(): void {
+    this.stopPolling();
+    if (this.panel) {
+      this.panel.dispose();
+      this.panel = undefined;
+    }
+  }
+
   static openOrReveal(sessionId: string, participantName: string, projectTitle: string): void {
     this.sessionId = sessionId;
     this.participantName = participantName;

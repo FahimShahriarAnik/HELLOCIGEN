@@ -4,7 +4,7 @@ import { serverManager } from "./serverManager";
 import { createSessionLog } from "./utils/session_log_utils";
 import { Role } from "./utils/liveshareHelpers";
 
-import { InitialSessionView } from "./ui/initialSessionView";
+import { SessionDashboard } from "./ui/sessionDashboard";
 import { TaskTrackerProvider } from "./ui/taskTrackerProvider";
 import { GuestOnboardingView } from "./ui/guestOnboardingView";
 
@@ -25,13 +25,14 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  const initialSessionProvider = new InitialSessionView(context);
+  const initialSessionProvider = new SessionDashboard(context);
+  SessionDashboard.instance = initialSessionProvider;
   const taskTrackerProvider = new TaskTrackerProvider();
   TaskTrackerProvider.instance = taskTrackerProvider;
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      InitialSessionView.viewId,
+      SessionDashboard.viewId,
       initialSessionProvider
     ),
     vscode.window.registerWebviewViewProvider(
@@ -48,6 +49,11 @@ export function activate(context: vscode.ExtensionContext) {
       const session = liveShare.session;
       if (session && session.role === Role.Guest) {
         GuestOnboardingView.createOrShow(context, liveShare);
+        // Notify sidebar so it starts polling for session state
+        const sessionId = session.id;
+        if (sessionId) {
+          initialSessionProvider.setActiveSession(sessionId, false);
+        }
       }
     };
 
@@ -56,7 +62,14 @@ export function activate(context: vscode.ExtensionContext) {
     tryShowOnboarding();
 
     // Also listen for future session changes
-    liveShare.onDidChangeSession(tryShowOnboarding);
+    liveShare.onDidChangeSession(() => {
+      tryShowOnboarding();
+      // Host auto-end: when Live Share session ends, mark completed
+      const s = liveShare.session;
+      if ((!s || s.role === Role.None) && initialSessionProvider.activeSessionId && initialSessionProvider.isHost) {
+        initialSessionProvider.endSession();
+      }
+    });
   });
 
   const restartServerCmd = vscode.commands.registerCommand(
@@ -140,6 +153,11 @@ export function activate(context: vscode.ExtensionContext) {
       liveShare.onDidChangeSession(() => {
         output.appendLine("onDidChangeSession fired");
         logSession();
+        // Host auto-end: when Live Share session ends, mark completed
+        const s = liveShare.session;
+        if ((!s || s.role === Role.None) && initialSessionProvider.activeSessionId && initialSessionProvider.isHost) {
+          initialSessionProvider.endSession();
+        }
       });
 
       /* ---------------- PEER TRACKING ---------------- */
@@ -240,7 +258,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(clearApiKeyCmd);
 }
 
-export function deactivate() {
-  // In deactivate():
+export async function deactivate() {
+  await SessionDashboard.instance?.endSession();
   serverManager.stopServer();
 }
