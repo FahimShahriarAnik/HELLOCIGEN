@@ -245,70 +245,44 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
-## Phase 6: Session Completion & AI Summary
+## Phase 6: Session Completion & AI Summary ✅ COMPLETED (testing pending)
 
-**Branch:** `session-dashboard` (checkout from `chat-queue`)
+**Branch:** `retrying_the_chat_feature`
 **Issues addressed:** No end-session flow exists; session lifecycle stops at "active" with no way to mark completion or generate a retrospective.
 **Depends on:** Phases 1–5 (session state machine, chat persistence, synced task tracking, @AI chat)
+**Status:** Implemented and compiled. Testing pending.
 
-### 6.1 — Add `summary` and `end_time` to SessionLogDocument
+### 6.1 — Add `summary` and `end_time` to SessionLogDocument ✅
 
-- **File:** `src/models/sessionLog.ts`
-- Add two explicit optional fields to `SessionLogDocument`:
-  ```typescript
-  summary?: string;     // AI-generated session summary
-  end_time?: string;    // ISO string, set when session completes
-  ```
-- No runtime impact — purely type additions. The interface already has `[key: string]: unknown` but explicit fields improve IntelliSense and documentation.
+- Added `summary?: string` and `end_time?: string` explicit optional fields to `SessionLogDocument` in `src/models/sessionLog.ts`
+- Purely type additions — no runtime impact
 
-### 6.2 — Handle `status: "completed"` in PATCH Endpoint
+### 6.2 — Handle `status: "completed"` in PATCH Endpoint ✅
 
-- **File:** `src/server/server.ts`
-- In the existing `PATCH /sessions/:session_id` handler, after the `division_of_work` block (~line 196), add:
-  ```typescript
-  if (update.status === "completed") {
-    sessionStates.set(session_id, { status: "completed" });
-    update.last_updated = new Date().toISOString();
-  }
-  ```
-- This ensures guests polling `GET /sessions/:id/state` detect completion via the in-memory `sessionStates` map.
+- `src/server/server.ts`: In `PATCH /sessions/:session_id`, added block before the `division_of_work` check
+- Sets `sessionStates` to `{ status: "completed" }` and `last_updated` timestamp when `update.status === "completed"`
+- Guests polling `GET /sessions/:id/state` will detect completion via the in-memory map
 
-### 6.3 — Add `buildSummaryPrompt(session)` Function
+### 6.3 — Add `buildSummaryPrompt(session)` Function ✅
 
-- **File:** `src/server/server.ts`
-- Separate from `buildSystemPrompt()` (which is for chat context). Constructs a prompt including:
-  - Project title + description
-  - Participants with roles, strengths, weaknesses
-  - Division of work with task completion counts (done / in-progress / todo)
-  - Session duration (start_time to end_time)
-  - Chat history (skip system messages, limit to last ~50 messages to stay within token limits)
-- Asks OpenAI to produce a structured summary with sections:
-  1. **Session Overview** — duration, participants, project
-  2. **Work Accomplished** — per-division task completion summary
-  3. **Key Decisions** — extracted from chat history
-  4. **Blockers & Unresolved Issues**
-  5. **Recommendations for Next Session**
+- `src/server/server.ts`: Separate from `buildSystemPrompt()` (which is for chat context)
+- Constructs prompt from: project title/description, participants with roles/strengths/weaknesses, division of work with task completion counts (done/in-progress/todo), session duration, and last 50 non-system chat messages
+- Asks OpenAI to produce structured summary: Session Overview, Work Accomplished, Key Decisions, Blockers & Unresolved Issues, Recommendations for Next Session
 
-### 6.4 — Add POST `/sessions/:session_id/summary` Endpoint
+### 6.4 — Add POST `/sessions/:session_id/summary` Endpoint ✅
 
-- **File:** `src/server/server.ts`
-- Fetches latest session log from MongoDB (by `session_number`)
-- Calls OpenAI with `buildSummaryPrompt(session)` — uses same `openaiApiKey` variable as chat
-- Persists `summary` field to MongoDB via `$set`
-- Also stores summary in `sessionStates` map so guests can access it via state polling
-- Returns `{ ok: true, summary: "..." }`
-- If no API key configured: returns `{ ok: false, error: "No API key" }`
+- `src/server/server.ts`: Fetches latest session log, calls OpenAI with `buildSummaryPrompt(session)` (max 2000 tokens)
+- Persists `summary` to MongoDB via `$set`, stores in `sessionStates` map for guest access
+- Returns `{ ok: true, summary }` or `{ ok: false, error: "No API key" }` if key missing
 
-### 6.5 — Add GET `/sessions/:session_id/summary` Endpoint
+### 6.5 — Add GET `/sessions/:session_id/summary` Endpoint ✅
 
-- **File:** `src/server/server.ts`
-- Fetches persisted summary from MongoDB (set by the POST call)
+- `src/server/server.ts`: Returns persisted summary from MongoDB
 - Returns `{ ok: true, summary }` or 404 if not yet generated
-- This is how guests fetch the summary after detecting completion via state polling
 
 ### 6.6 — Verification
 
-- [ ] `npm run compile` — no TypeScript errors after type additions
+- [x] `npm run compile` — no TypeScript errors after type additions
 - [ ] PATCH a session with `{ status: "completed" }` → `sessionStates` map updated
 - [ ] `GET /sessions/:id/state` returns `{ status: "completed" }` after PATCH
 - [ ] `POST /sessions/:id/summary` generates AI summary and persists to MongoDB
@@ -483,7 +457,7 @@ Build Phase 6 first (all server-side, zero UI impact), then Phase 7:
 - Chat is synced across all participants via server polling (3s interval in `DevChatPanel`); `chatManager2` persists with `skipAi: true` to avoid duplicate AI calls
 - `DevChatPanel` auto-opens for both host (from `DevelopmentView`) and guests (from `GuestDevelopmentView`) after session becomes active
 - Auto-dismissing notifications pattern (`withProgress` + timeout) is now used for the API key found notification; can be applied to other informational popups as needed
-- **Phase 6 is server-only** — zero UI changes, purely additive endpoints. Safe to build and test independently before touching the sidebar.
+- **Phase 6 is complete (testing pending)** — server-only, zero UI changes. Adds `buildSummaryPrompt()` (separate from chat `buildSystemPrompt()`), POST/GET summary endpoints, and completed-status handling in PATCH. All additive — no existing behavior changed.
 - **Phase 7 renames** `initialSessionView.ts` → `sessionDashboard.ts` and class `InitialSessionView` → `SessionDashboard`. The `viewId` string `"helloCigen.initialSession"` in `package.json` is **not** renamed — it binds the sidebar slot and must stay stable.
 - Only `src/extension.ts` has an existing import from `initialSessionView`; `newSessionCreationView.ts` does **not** import from it.
 - The AI summary is generated server-side (same OpenAI client as chat) and persisted to MongoDB. Guests fetch it via `GET /sessions/:id/summary` — they never need the API key.

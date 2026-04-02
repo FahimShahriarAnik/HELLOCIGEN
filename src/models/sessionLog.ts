@@ -61,7 +61,8 @@ export interface SessionLogDocument {
   };
   division_of_work: Division[];
   chat_history?: ChatMessage[];
+  summary?: string;     // AI-generated session summary
+  end_time?: string;    // ISO string, set when session completes
   // Allow extra top-level fields in the future
-  // Ideas for more fields: end_time, summary, notes, etc.
   [key: string]: unknown;
 }
