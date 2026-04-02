@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { TaskTrackerProvider } from './taskTrackerProvider';
 import { DevChatPanel } from './devChatPanel';
+import { SessionDashboard } from './sessionDashboard';
 
 interface Division {
   id: string;
@@ -47,6 +48,7 @@ export class GuestDevelopmentView {
     TaskTrackerProvider.instance?.setDivisions(castDivisions(divisions));
     if (sessionId) {
       TaskTrackerProvider.instance?.setSession(sessionId);
+      SessionDashboard.instance?.setActiveSession(sessionId, false);
     }
 
     this.panel.webview.html = this.getHtml(guestName, divisions, participants);

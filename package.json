@@ -2,7 +2,7 @@
   "name": "hello-cigen",
   "displayName": "HELLOCIGEN – Live Share API Testing",
   "description": "Testing VS Code Live Share APIs for collaborative sessions",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.107.0"

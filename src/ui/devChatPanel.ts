@@ -11,6 +11,14 @@ export class DevChatPanel {
   private static participantName = '';
   private static sending = false;
 
+  static dispose(): void {
+    this.stopPolling();
+    if (this.panel) {
+      this.panel.dispose();
+      this.panel = undefined;
+    }
+  }
+
   static openOrReveal(sessionId: string, participantName: string, projectTitle: string): void {
     this.sessionId = sessionId;
     this.participantName = participantName;

@@ -6,6 +6,7 @@ import { patchSessionLog } from '../utils/session_log_utils';
 import { generateDivisionOfWork, AiDivision } from '../utils/aiUtils';
 import { TaskTrackerProvider } from './taskTrackerProvider';
 import { DevChatPanel } from './devChatPanel';
+import { SessionDashboard } from './sessionDashboard';
 
 type DivisionWithOwner = AiDivision & { owner_id: string };
 
@@ -71,6 +72,7 @@ export class DevelopmentView {
     // Populate task tracker, connect to session for sync, and reveal in sidebar
     TaskTrackerProvider.instance?.setDivisions(divisions);
     TaskTrackerProvider.instance?.setSession(sessionId);
+    SessionDashboard.instance?.setActiveSession(sessionId, true);
     await vscode.commands.executeCommand('helloCigen.taskTracker.focus');
 
     // Open the shared AI chat panel to the right

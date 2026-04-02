@@ -30,6 +30,7 @@ interface SessionState {
   division_of_work?: Division[];
   participants?: Array<{ id: string; name: string }>;
   project_title?: string;
+  session_name?: string;
 }
 const sessionStates = new Map<string, SessionState>();
 
@@ -171,15 +172,19 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
       sessionStates.set(session_id, { status: "dividing" });
     }
 
+    // If status is "completed", set last_updated before persisting
+    if (update.status === "completed") {
+      update.last_updated = new Date().toISOString();
+    }
+
     const result = await coll.updateOne(
       { session_id, session_number: latest[0].session_number },  // target latest
       { $set: update }
     );
 
-    // If status is "completed", update in-memory state and set last_updated
+    // Update in-memory state for guest polling
     if (update.status === "completed") {
       sessionStates.set(session_id, { status: "completed" });
-      update.last_updated = new Date().toISOString();
     }
 
     // If division_of_work was patched, transition state to "active" so guests detect it
@@ -189,7 +194,8 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
         status: "active",
         division_of_work: update.division_of_work as Division[],
         participants,
-        project_title: latest[0].project_title
+        project_title: latest[0].project_title,
+        session_name: latest[0].session_name
       });
     }
 
