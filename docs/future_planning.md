@@ -293,9 +293,25 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ## Phase 7: Stateful Session Dashboard Sidebar
 
-**Branch:** `session-dashboard` (same branch as Phase 6)
+**Branch:** `retrying_the_chat_feature`
 **Issues addressed:** Sidebar (`initialSessionView`) is static — always shows create/resume UI even after session is running. No way for host to end a session. No session summary visible to participants.
 **Depends on:** Phase 6 (completion handling + summary endpoints must exist before the sidebar can call them)
+
+### Current Session-End Handling (Pre-Phase 7): NONE on either side
+
+**Host side gaps:**
+- `extension.ts:140-143` — `onDidChangeSession` only logs, no cleanup or state transition
+- `deactivate()` (line 243) only calls `serverManager.stopServer()` — doesn't mark session completed
+- `devChatPanel` (3s) and `taskTrackerProvider` (4s) polling loops run forever after disconnect
+- `developmentView` is fire-and-forget — no panel reference, no dispose
+
+**Guest side gaps:**
+- `extension.ts:47-59` — `onDidChangeSession` only checks `Role.Guest` to show onboarding, no disconnect handler
+- `guestOnboardingView` polling stops on `"active"` or panel dispose only — no detection if host ends session
+- `guestDevelopmentView` has no polling and no detection — stale UI stays visible
+- `devChatPanel` and `taskTrackerProvider` polling loops run forever against dead server
+
+**Design decision:** Guests do NOT react to Live Share disconnect directly. Instead, existing polling detects `"completed"` status from the server and transitions the sidebar to the summary view. Only the host triggers `endSession()` (manual button, Live Share disconnect, or VS Code close).
 
 ### 7.1 — Rename File and Class
 
@@ -335,19 +351,25 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 - Add `stopPolling()` — clears interval timer
 - **Edge case — sidebar collapsed:** State stored in instance variables. When VS Code calls `resolveWebviewView()` again (user clicks sidebar icon), it reads current state and renders correct HTML.
 
-### 7.4 — End Session Flow
+### 7.4 — End Session Flow (Host-Triggered)
 
 - **File:** `src/ui/sessionDashboard.ts`
-- Add `endSession()` method (called from webview "End Session" button or auto-end):
+- Add `endSession()` method — **three triggers, one method:**
+  1. Manual "End Session" button click in dashboard sidebar
+  2. Auto-end on Live Share disconnect (`onDidChangeSession` detects `Role.None`, host only)
+  3. Auto-end on VS Code close (`deactivate()` calls `endSession()` before `stopServer()`)
+- Method flow:
   1. Idempotent guard — skip if `sidebarState === 'completed'`
-  2. PATCH `/sessions/:id` with `{ status: "completed", end_time: new Date().toISOString() }`
+  2. PATCH `/sessions/:id` with `{ status: "completed", end_time: new Date().toISOString() }` — guests detect via polling
   3. Set `sidebarState = 'completed'`, `summaryText = undefined` → render loading state
-  4. POST `/sessions/:id/summary` → wait for AI summary
-  5. Set `summaryText` from response → re-render with summary
+  4. Host: POST `/sessions/:id/summary` → wait for AI summary generation
+  5. Guest: GET `/sessions/:id/summary` → fetch host-generated summary (read-only, no OpenAI call)
+  6. Set `summaryText` from response → re-render with summary (or `'__error__'` + Retry button on failure)
+- Add `fetchSummary(sessionId)` private helper — GET endpoint, sets `summaryText` or `'__error__'`
 - Add message handlers in `resolveWebviewView()`:
   - `'endSession'` → calls `endSession()`
   - `'newSession'` → resets all state, renders welcome
-  - `'retrySummary'` → re-calls POST `/sessions/:id/summary`
+  - `'retrySummary'` → host re-POSTs, guest re-GETs summary
 
 ### 7.5 — Hook Into Existing `startSession()` Method
 
@@ -374,15 +396,27 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
     initialSessionProvider.setActiveSession(sessionId, false); // isHost = false
   }
   ```
-- Add auto-end on Live Share disconnect (in existing `vsls.getApi().then(...)` block):
+- Add host auto-end on Live Share disconnect (modify `onDidChangeSession` at line 59):
   ```typescript
   liveShare.onDidChangeSession(() => {
+    tryShowOnboarding(); // existing guest logic
+    // Host auto-end: when Live Share session ends, mark completed
     const s = liveShare.session;
-    if (!s || s.role === Role.None) {
+    if ((!s || s.role === Role.None) && initialSessionProvider.activeSessionId && initialSessionProvider.isHost) {
       initialSessionProvider.endSession();
     }
   });
   ```
+  Only fires for host (checked via `isHost`). Guests keep polling and detect `"completed"` via their own sidebar polling.
+- Also add same auto-end logic to `onDidChangeSession` in the `helloCigen.start` command flow (line 140-143)
+- Update `deactivate()` (line 243-246) — call `endSession()` before `stopServer()`:
+  ```typescript
+  export async function deactivate() {
+    await SessionDashboard.instance?.endSession();
+    serverManager.stopServer();
+  }
+  ```
+  Ensures session is marked completed if host closes VS Code entirely. `deactivate()` becomes async (VS Code supports this).
 
 ### 7.7 — Notify Sidebar from Development Views
 
@@ -398,46 +432,94 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
   ```
 - These are belt-and-suspenders calls — polling should already detect the transition, but explicit notification ensures immediate sidebar update without waiting for the next 5s poll.
 
-### 7.8 — Edge Cases
+### 7.8 — Session Cleanup on End
+
+When the session transitions to `"completed"`, all active polling loops and panels must be cleaned up on both host and guest. This is triggered in two places:
+
+**A) Host-side: `endSession()` in `SessionDashboard` calls cleanup directly**
+
+After PATCHing `status: "completed"`, `endSession()` calls:
+```typescript
+// Stop all polling loops
+TaskTrackerProvider.instance?.dispose();           // public, stops 4s polling
+DevChatPanel.dispose();                            // NEW public static method (see below)
+```
+
+**B) Guest-side: sidebar polling detects `"completed"` → calls same cleanup**
+
+In `startSessionPolling()`, when `state.status === 'completed'` is detected:
+```typescript
+if (state.status === 'completed' && this.sidebarState !== 'completed') {
+  this.stopPolling();                              // stop sidebar's own 5s polling
+  TaskTrackerProvider.instance?.dispose();          // stop 4s task polling
+  DevChatPanel.dispose();                           // stop 3s chat polling + close panel
+  // ... transition to completed state + fetch summary
+}
+```
+
+**C) Changes needed to existing files for cleanup:**
+
+| File | Change | Detail |
+|------|--------|--------|
+| `src/ui/devChatPanel.ts` | Add `public static dispose()` method | Calls `this.stopPolling()` and `this.panel?.dispose(); this.panel = undefined;` — closes panel + stops 3s polling |
+| `src/ui/taskTrackerProvider.ts` | No changes | `dispose()` is already public, stops 4s polling |
+| `src/ui/guestDevelopmentView.ts` | No changes needed | Static panel with no polling. Stays open — user can close manually. Not worth adding dispose machinery for a static HTML page |
+| `src/ui/guestOnboardingView.ts` | No changes needed | Polling only runs pre-active; guest is already in `GuestDevelopmentView` by the time session ends |
+
+**D) What happens to each component after cleanup:**
+
+| Component | After session ends |
+|---|---|
+| SessionDashboard sidebar | Transitions to `"completed"` state showing AI summary |
+| DevChatPanel | Panel closed, polling stopped. Chat history persisted in MongoDB — reopenable via future "View History" if needed |
+| TaskTrackerProvider | Polling stopped. Sidebar still shows last-known task state (read-only — no more server sync). Cleared on "Start New Session" |
+| GuestDevelopmentView | Stays open (static HTML, no polling). User can close manually |
+| DevelopmentView | Was never kept as a reference (fire-and-forget). No cleanup needed |
+
+### 7.9 — Edge Cases
 
 - **Sidebar collapsed during transition:** State stored in instance vars. `resolveWebviewView()` re-renders current state when sidebar is revealed.
-- **Double endSession calls** (auto-end + manual click): `endSession()` is idempotent — checks if already completed before proceeding.
+- **Double endSession calls** (auto-end + manual click, deactivate + disconnect): `endSession()` is idempotent — checks `sidebarState === 'completed'` before proceeding.
 - **Summary generation fails:** Shows error message + "Retry" button. Session is still marked completed in MongoDB regardless.
 - **Guest sees "End Session":** Button only rendered when `isHost === true`.
-- **Server unreachable for guest summary fetch:** Only the host calls `POST /sessions/:id/summary` (one OpenAI API call). The summary is persisted to MongoDB. Guests fetch it via `GET /sessions/:id/summary` (a read from MongoDB, no AI call). If the server is unreachable when a guest tries to GET the summary, try/catch with fallback message; polling retries silently.
+- **Host closes VS Code:** `deactivate()` calls `endSession()` before `stopServer()`. PATCH + POST may partially fail if server shuts down too fast — acceptable for v1.
+- **Host Live Share disconnect (not VS Code close):** `onDidChangeSession` fires with `Role.None` → `endSession()` called. Server is still running, so PATCH + POST succeed normally.
+- **Summary not ready when guest detects "completed":** Host's POST may still be running when guest polls `GET /summary` → 404. Shows error + Retry button. Guest retries manually.
+- **Server unreachable for guest summary fetch:** Guest try/catch with fallback message; Retry button available.
 
-### 7.9 — Files Modified
+### 7.10 — Files Modified
 
 | File | Change Scope | Risk |
 |------|-------------|------|
-| `src/ui/initialSessionView.ts` → `src/ui/sessionDashboard.ts` | Rename file + class → `SessionDashboard`, add state machine, 3 render methods, polling, end session | **Medium** — welcome HTML preserved verbatim |
-| `src/extension.ts` | Update import path, singleton setup, guest mode, auto-end listener | Low |
+| `src/ui/initialSessionView.ts` → `src/ui/sessionDashboard.ts` | Rename file + class → `SessionDashboard`, add state machine, 3 render methods, polling, endSession + cleanup calls | **Medium** — welcome HTML preserved verbatim |
+| `src/extension.ts` | Update import path, singleton setup, guest notify, host auto-end listener, `deactivate()` async + `endSession()` | Low |
+| `src/ui/devChatPanel.ts` | Add `public static dispose()` — stops 3s polling + closes panel | Low — additive only |
 | `src/ui/developmentView.ts` | 2 lines added (import + sidebar notify) | None |
 | `src/ui/guestDevelopmentView.ts` | 2 lines added (import + sidebar notify) | None |
 
-### 7.10 — Verification
+### 7.11 — Verification
 
 - [ ] `npm run compile` — no TypeScript errors
 - [ ] F5 launch → sidebar shows welcome UI (unchanged from current behavior)
 - [ ] Start session → sidebar stays in welcome during draft/dividing phases
 - [ ] Divisions confirmed → sidebar transitions to dashboard (status: active, division cards, participants)
 - [ ] Host clicks "End Session" → AI summary generated → sidebar shows completed state with summary
+- [ ] Host ends session → DevChatPanel closes, TaskTracker stops polling
 - [ ] "Start New Session" button returns to welcome state
 - [ ] Guest joins → sidebar shows dashboard after session becomes active
-- [ ] Host ends session → guest sidebar shows same AI summary
-- [ ] Close VS Code as host → Live Share disconnect triggers auto-end → summary generated
+- [ ] Host ends session → guest sidebar detects completed → DevChatPanel closes, TaskTracker stops → summary shown
+- [ ] Close VS Code as host → Live Share disconnect triggers auto-end → cleanup + summary generated
 - [ ] Build VSIX: `npx vsce package`
 
-### 7.11 — Implementation Order
+### 7.12 — Implementation Order
 
-Build Phase 6 first (all server-side, zero UI impact), then Phase 7:
-1. `src/models/sessionLog.ts` — type additions (0 risk)
-2. `src/server/server.ts` — completion handling + summary endpoints (additive, no existing behavior changed)
-3. `src/ui/initialSessionView.ts` → rename to `src/ui/sessionDashboard.ts` + full refactor (welcome HTML preserved exactly)
-4. `src/extension.ts` — update import path, wire singleton + guest mode + auto-end
-5. `src/ui/developmentView.ts` — add sidebar notify (2 lines)
-6. `src/ui/guestDevelopmentView.ts` — add sidebar notify (2 lines)
-7. `npm run compile` + manual testing
+Phase 6 is already done (server-side). Phase 7 implementation:
+1. `src/ui/devChatPanel.ts` — add `public static dispose()` method (small, prerequisite for cleanup)
+2. `src/ui/initialSessionView.ts` → rename to `src/ui/sessionDashboard.ts` + full refactor (welcome HTML preserved exactly, endSession calls cleanup)
+3. `src/extension.ts` — update import path, wire singleton + guest notify + host auto-end + `deactivate()` async
+4. `src/ui/developmentView.ts` — add sidebar notify (2 lines)
+5. `src/ui/guestDevelopmentView.ts` — add sidebar notify (2 lines)
+6. `npm run compile` + manual testing
 
 ---
 
@@ -454,11 +536,14 @@ Build Phase 6 first (all server-side, zero UI impact), then Phase 7:
 - The legacy `helloCigen.start` command flow still uses the old `createSessionLog` POST path
 - OpenAI API key is forwarded from the extension host to the Express server via `POST /api-key`; server-side AI handles all chat responses so guests don't need the key
 - `peerNumber` is the stable unique key for participant matching (replaces nullable `userId`)
-- Chat is synced across all participants via server polling (3s interval in `DevChatPanel`); `chatManager2` persists with `skipAi: true` to avoid duplicate AI calls
+- Chat is synced across all participants via server polling (3s interval in `DevChatPanel`). `DevChatPanel` is the sole chat implementation (chatManager2 removed in Phase 5).
 - `DevChatPanel` auto-opens for both host (from `DevelopmentView`) and guests (from `GuestDevelopmentView`) after session becomes active
 - Auto-dismissing notifications pattern (`withProgress` + timeout) is now used for the API key found notification; can be applied to other informational popups as needed
 - **Phase 6 is complete (testing pending)** — server-only, zero UI changes. Adds `buildSummaryPrompt()` (separate from chat `buildSystemPrompt()`), POST/GET summary endpoints, and completed-status handling in PATCH. All additive — no existing behavior changed.
 - **Phase 7 renames** `initialSessionView.ts` → `sessionDashboard.ts` and class `InitialSessionView` → `SessionDashboard`. The `viewId` string `"helloCigen.initialSession"` in `package.json` is **not** renamed — it binds the sidebar slot and must stay stable.
 - Only `src/extension.ts` has an existing import from `initialSessionView`; `newSessionCreationView.ts` does **not** import from it.
 - The AI summary is generated server-side (same OpenAI client as chat) and persisted to MongoDB. Guests fetch it via `GET /sessions/:id/summary` — they never need the API key.
+- **Phase 7 session-end design:** Pre-Phase 7, neither host nor guest has any session-end handling. Phase 7 adds: host-triggered `endSession()` (manual button + Live Share disconnect + VS Code close via `deactivate()`), guest-side detection via sidebar polling detecting `"completed"` status. On session end, `endSession()` and guest-side completion detection both call `DevChatPanel.dispose()` (new public static method) and `TaskTrackerProvider.instance?.dispose()` to stop all polling loops and close the chat panel. `GuestDevelopmentView` stays open (static HTML, no polling) — user can close manually.
+- **`deactivate()` becomes async in Phase 7** — calls `SessionDashboard.instance?.endSession()` before `serverManager.stopServer()` to persist session completion on VS Code close.
+- **`isHost` field is public** on `SessionDashboard` — needed by `extension.ts` to guard auto-end so only the host triggers `endSession()` on Live Share disconnect. Guests detect completion via their own sidebar polling.
 - **Security (future improvement):** The OpenAI API key is stored in plaintext in server memory and any Live Share participant can trigger API calls via server endpoints (e.g., @AI messages, summary generation) using the host's key. Risk is low (localhost-only server, encrypted Live Share tunnel, trusted collaborators), but future iterations should consider: rate limiting per participant, per-session token usage caps, or scoped API keys to prevent abuse.
