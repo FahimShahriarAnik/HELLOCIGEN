@@ -245,6 +245,228 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 
 ---
 
+## Phase 6: Session Completion & AI Summary
+
+**Branch:** `session-dashboard` (checkout from `chat-queue`)
+**Issues addressed:** No end-session flow exists; session lifecycle stops at "active" with no way to mark completion or generate a retrospective.
+**Depends on:** Phases 1–5 (session state machine, chat persistence, synced task tracking, @AI chat)
+
+### 6.1 — Add `summary` and `end_time` to SessionLogDocument
+
+- **File:** `src/models/sessionLog.ts`
+- Add two explicit optional fields to `SessionLogDocument`:
+  ```typescript
+  summary?: string;     // AI-generated session summary
+  end_time?: string;    // ISO string, set when session completes
+  ```
+- No runtime impact — purely type additions. The interface already has `[key: string]: unknown` but explicit fields improve IntelliSense and documentation.
+
+### 6.2 — Handle `status: "completed"` in PATCH Endpoint
+
+- **File:** `src/server/server.ts`
+- In the existing `PATCH /sessions/:session_id` handler, after the `division_of_work` block (~line 196), add:
+  ```typescript
+  if (update.status === "completed") {
+    sessionStates.set(session_id, { status: "completed" });
+    update.last_updated = new Date().toISOString();
+  }
+  ```
+- This ensures guests polling `GET /sessions/:id/state` detect completion via the in-memory `sessionStates` map.
+
+### 6.3 — Add `buildSummaryPrompt(session)` Function
+
+- **File:** `src/server/server.ts`
+- Separate from `buildSystemPrompt()` (which is for chat context). Constructs a prompt including:
+  - Project title + description
+  - Participants with roles, strengths, weaknesses
+  - Division of work with task completion counts (done / in-progress / todo)
+  - Session duration (start_time to end_time)
+  - Chat history (skip system messages, limit to last ~50 messages to stay within token limits)
+- Asks OpenAI to produce a structured summary with sections:
+  1. **Session Overview** — duration, participants, project
+  2. **Work Accomplished** — per-division task completion summary
+  3. **Key Decisions** — extracted from chat history
+  4. **Blockers & Unresolved Issues**
+  5. **Recommendations for Next Session**
+
+### 6.4 — Add POST `/sessions/:session_id/summary` Endpoint
+
+- **File:** `src/server/server.ts`
+- Fetches latest session log from MongoDB (by `session_number`)
+- Calls OpenAI with `buildSummaryPrompt(session)` — uses same `openaiApiKey` variable as chat
+- Persists `summary` field to MongoDB via `$set`
+- Also stores summary in `sessionStates` map so guests can access it via state polling
+- Returns `{ ok: true, summary: "..." }`
+- If no API key configured: returns `{ ok: false, error: "No API key" }`
+
+### 6.5 — Add GET `/sessions/:session_id/summary` Endpoint
+
+- **File:** `src/server/server.ts`
+- Fetches persisted summary from MongoDB (set by the POST call)
+- Returns `{ ok: true, summary }` or 404 if not yet generated
+- This is how guests fetch the summary after detecting completion via state polling
+
+### 6.6 — Verification
+
+- [ ] `npm run compile` — no TypeScript errors after type additions
+- [ ] PATCH a session with `{ status: "completed" }` → `sessionStates` map updated
+- [ ] `GET /sessions/:id/state` returns `{ status: "completed" }` after PATCH
+- [ ] `POST /sessions/:id/summary` generates AI summary and persists to MongoDB
+- [ ] `GET /sessions/:id/summary` returns the persisted summary
+- [ ] Summary endpoint returns error gracefully when no API key is set
+
+---
+
+## Phase 7: Stateful Session Dashboard Sidebar
+
+**Branch:** `session-dashboard` (same branch as Phase 6)
+**Issues addressed:** Sidebar (`initialSessionView`) is static — always shows create/resume UI even after session is running. No way for host to end a session. No session summary visible to participants.
+**Depends on:** Phase 6 (completion handling + summary endpoints must exist before the sidebar can call them)
+
+### 7.1 — Rename File and Class
+
+- **Rename file:** `src/ui/initialSessionView.ts` → `src/ui/sessionDashboard.ts`
+- **Rename class:** `InitialSessionView` → `SessionDashboard`
+- **Keep `viewId = "helloCigen.initialSession"` unchanged** — this is the string registered in `package.json` (line ~28) that binds the sidebar slot to this provider. Renaming it would require updating `package.json` contributions and could break activation events.
+- Update imports in files that reference the old path:
+  - `src/extension.ts` — change `from './ui/initialSessionView'` → `from './ui/sessionDashboard'`
+  - (No other existing files import from `initialSessionView`)
+- Add static `instance` property (same singleton pattern as `TaskTrackerProvider`)
+- Add internal state fields:
+  ```typescript
+  private sidebarState: 'welcome' | 'dashboard' | 'completed' = 'welcome';
+  public activeSessionId: string | undefined;
+  private sessionData: any | null = null;
+  private summaryText: string | undefined;
+  private isHost: boolean = true;
+  private pollTimer?: ReturnType<typeof setInterval>;
+  ```
+
+### 7.2 — Three-State Render Dispatch
+
+- **File:** `src/ui/sessionDashboard.ts`
+- Replace `render()` with a dispatcher:
+  - `'welcome'` → `renderWelcome()` — returns **exactly** the current HTML (lines 41–250). Zero changes to existing welcome UI.
+  - `'dashboard'` → `renderDashboard()` — new HTML showing session name, status badge, project title, participant list, division cards grid, and "End Session" button (host only, hidden when `isHost === false`)
+  - `'completed'` → `renderCompleted()` — new HTML showing AI-generated summary text, loading spinner while summary generates, error + "Retry" button if generation fails, and "Start New Session" button that resets to welcome state
+- Division cards layout adapted from `guestDevelopmentView` (use `minmax(200px, 1fr)` for sidebar width)
+
+### 7.3 — Session Polling & State Transitions
+
+- **File:** `src/ui/sessionDashboard.ts`
+- Add `setActiveSession(sessionId, isHost)` public method — stores session ID, starts polling
+- Add `startSessionPolling(sessionId)` — polls `GET /sessions/:id/state` every 5 seconds:
+  - When status becomes `"active"` and sidebar is still in welcome → transition to dashboard
+  - When status becomes `"completed"` → fetch summary via `GET /sessions/:id/summary` → transition to completed
+- Add `stopPolling()` — clears interval timer
+- **Edge case — sidebar collapsed:** State stored in instance variables. When VS Code calls `resolveWebviewView()` again (user clicks sidebar icon), it reads current state and renders correct HTML.
+
+### 7.4 — End Session Flow
+
+- **File:** `src/ui/sessionDashboard.ts`
+- Add `endSession()` method (called from webview "End Session" button or auto-end):
+  1. Idempotent guard — skip if `sidebarState === 'completed'`
+  2. PATCH `/sessions/:id` with `{ status: "completed", end_time: new Date().toISOString() }`
+  3. Set `sidebarState = 'completed'`, `summaryText = undefined` → render loading state
+  4. POST `/sessions/:id/summary` → wait for AI summary
+  5. Set `summaryText` from response → re-render with summary
+- Add message handlers in `resolveWebviewView()`:
+  - `'endSession'` → calls `endSession()`
+  - `'newSession'` → resets all state, renders welcome
+  - `'retrySummary'` → re-calls POST `/sessions/:id/summary`
+
+### 7.5 — Hook Into Existing `startSession()` Method
+
+- **File:** `src/ui/sessionDashboard.ts`
+- After `NewSessionCreationView.createOrShow(...)` (line ~316), add:
+  ```typescript
+  if (sessionId) {
+    this.activeSessionId = sessionId;
+    this.isHost = true;
+    this.startSessionPolling(sessionId);
+  }
+  ```
+- Sidebar stays in welcome state during draft/dividing — only transitions to dashboard when polling detects "active". This preserves the current UX where the host works in NewSessionCreationView/DivisionReview before seeing the dashboard.
+
+### 7.6 — Wire Up `extension.ts`
+
+- **File:** `src/extension.ts`
+- Update import: `import { SessionDashboard } from './ui/sessionDashboard';`
+- Set singleton after instantiation: `SessionDashboard.instance = initialSessionProvider;`
+- In guest detection block (after `GuestOnboardingView.createOrShow`), notify sidebar:
+  ```typescript
+  const sessionId = liveShare.session?.id;
+  if (sessionId) {
+    initialSessionProvider.setActiveSession(sessionId, false); // isHost = false
+  }
+  ```
+- Add auto-end on Live Share disconnect (in existing `vsls.getApi().then(...)` block):
+  ```typescript
+  liveShare.onDidChangeSession(() => {
+    const s = liveShare.session;
+    if (!s || s.role === Role.None) {
+      initialSessionProvider.endSession();
+    }
+  });
+  ```
+
+### 7.7 — Notify Sidebar from Development Views
+
+- **File:** `src/ui/developmentView.ts` — after TaskTracker is populated, add:
+  ```typescript
+  import { SessionDashboard } from './sessionDashboard';
+  SessionDashboard.instance?.setActiveSession(sessionId, true);
+  ```
+- **File:** `src/ui/guestDevelopmentView.ts` — after TaskTracker is populated, add:
+  ```typescript
+  import { SessionDashboard } from './sessionDashboard';
+  SessionDashboard.instance?.setActiveSession(sessionId, false);
+  ```
+- These are belt-and-suspenders calls — polling should already detect the transition, but explicit notification ensures immediate sidebar update without waiting for the next 5s poll.
+
+### 7.8 — Edge Cases
+
+- **Sidebar collapsed during transition:** State stored in instance vars. `resolveWebviewView()` re-renders current state when sidebar is revealed.
+- **Double endSession calls** (auto-end + manual click): `endSession()` is idempotent — checks if already completed before proceeding.
+- **Summary generation fails:** Shows error message + "Retry" button. Session is still marked completed in MongoDB regardless.
+- **Guest sees "End Session":** Button only rendered when `isHost === true`.
+- **Server unreachable for guest summary fetch:** Only the host calls `POST /sessions/:id/summary` (one OpenAI API call). The summary is persisted to MongoDB. Guests fetch it via `GET /sessions/:id/summary` (a read from MongoDB, no AI call). If the server is unreachable when a guest tries to GET the summary, try/catch with fallback message; polling retries silently.
+
+### 7.9 — Files Modified
+
+| File | Change Scope | Risk |
+|------|-------------|------|
+| `src/ui/initialSessionView.ts` → `src/ui/sessionDashboard.ts` | Rename file + class → `SessionDashboard`, add state machine, 3 render methods, polling, end session | **Medium** — welcome HTML preserved verbatim |
+| `src/extension.ts` | Update import path, singleton setup, guest mode, auto-end listener | Low |
+| `src/ui/developmentView.ts` | 2 lines added (import + sidebar notify) | None |
+| `src/ui/guestDevelopmentView.ts` | 2 lines added (import + sidebar notify) | None |
+
+### 7.10 — Verification
+
+- [ ] `npm run compile` — no TypeScript errors
+- [ ] F5 launch → sidebar shows welcome UI (unchanged from current behavior)
+- [ ] Start session → sidebar stays in welcome during draft/dividing phases
+- [ ] Divisions confirmed → sidebar transitions to dashboard (status: active, division cards, participants)
+- [ ] Host clicks "End Session" → AI summary generated → sidebar shows completed state with summary
+- [ ] "Start New Session" button returns to welcome state
+- [ ] Guest joins → sidebar shows dashboard after session becomes active
+- [ ] Host ends session → guest sidebar shows same AI summary
+- [ ] Close VS Code as host → Live Share disconnect triggers auto-end → summary generated
+- [ ] Build VSIX: `npx vsce package`
+
+### 7.11 — Implementation Order
+
+Build Phase 6 first (all server-side, zero UI impact), then Phase 7:
+1. `src/models/sessionLog.ts` — type additions (0 risk)
+2. `src/server/server.ts` — completion handling + summary endpoints (additive, no existing behavior changed)
+3. `src/ui/initialSessionView.ts` → rename to `src/ui/sessionDashboard.ts` + full refactor (welcome HTML preserved exactly)
+4. `src/extension.ts` — update import path, wire singleton + guest mode + auto-end
+5. `src/ui/developmentView.ts` — add sidebar notify (2 lines)
+6. `src/ui/guestDevelopmentView.ts` — add sidebar notify (2 lines)
+7. `npm run compile` + manual testing
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
@@ -261,3 +483,8 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 - Chat is synced across all participants via server polling (3s interval in `DevChatPanel`); `chatManager2` persists with `skipAi: true` to avoid duplicate AI calls
 - `DevChatPanel` auto-opens for both host (from `DevelopmentView`) and guests (from `GuestDevelopmentView`) after session becomes active
 - Auto-dismissing notifications pattern (`withProgress` + timeout) is now used for the API key found notification; can be applied to other informational popups as needed
+- **Phase 6 is server-only** — zero UI changes, purely additive endpoints. Safe to build and test independently before touching the sidebar.
+- **Phase 7 renames** `initialSessionView.ts` → `sessionDashboard.ts` and class `InitialSessionView` → `SessionDashboard`. The `viewId` string `"helloCigen.initialSession"` in `package.json` is **not** renamed — it binds the sidebar slot and must stay stable.
+- Only `src/extension.ts` has an existing import from `initialSessionView`; `newSessionCreationView.ts` does **not** import from it.
+- The AI summary is generated server-side (same OpenAI client as chat) and persisted to MongoDB. Guests fetch it via `GET /sessions/:id/summary` — they never need the API key.
+- **Security (future improvement):** The OpenAI API key is stored in plaintext in server memory and any Live Share participant can trigger API calls via server endpoints (e.g., @AI messages, summary generation) using the host's key. Risk is low (localhost-only server, encrypted Live Share tunnel, trusted collaborators), but future iterations should consider: rate limiting per participant, per-session token usage caps, or scoped API keys to prevent abuse.
