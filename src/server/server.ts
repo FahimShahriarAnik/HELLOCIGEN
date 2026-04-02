@@ -176,6 +176,12 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
       { $set: update }
     );
 
+    // If status is "completed", update in-memory state and set last_updated
+    if (update.status === "completed") {
+      sessionStates.set(session_id, { status: "completed" });
+      update.last_updated = new Date().toISOString();
+    }
+
     // If division_of_work was patched, transition state to "active" so guests detect it
     if (update.division_of_work) {
       const participants = (update.participants as any[] || latest[0].participants)?.map((p: any) => ({ id: p.id, name: p.name })) ?? [];
@@ -489,6 +495,153 @@ function buildSystemPrompt(session: any): string {
   prompt += `When a message is prefixed with [Name], that's the participant speaking. Address them by name when relevant.`;
   return prompt;
 }
+
+// Build a prompt for AI-generated session summary (separate from chat system prompt)
+function buildSummaryPrompt(session: any): string {
+  let prompt = `You are CoGEN, an AI project manager. Generate a structured retrospective summary for a collaborative coding session.\n\n`;
+
+  // Project info
+  if (session.project_details?.title) {
+    prompt += `## Project\n`;
+    prompt += `Title: ${session.project_details.title}\n`;
+    prompt += `Description: ${session.project_details.description ?? 'N/A'}\n\n`;
+  }
+
+  // Duration
+  prompt += `## Session Duration\n`;
+  prompt += `Start: ${session.start_time ?? 'Unknown'}\n`;
+  prompt += `End: ${session.end_time ?? 'Unknown'}\n\n`;
+
+  // Participants
+  if (session.participants?.length > 0) {
+    prompt += `## Participants\n`;
+    for (const p of session.participants) {
+      prompt += `- ${p.name} (${p.role ?? 'member'})`;
+      if (p.strengths) prompt += ` — Strengths: ${p.strengths}`;
+      if (p.weaknesses) prompt += `, Weaknesses: ${p.weaknesses}`;
+      prompt += `\n`;
+    }
+    prompt += `\n`;
+  }
+
+  // Division of work with task completion counts
+  if (session.division_of_work?.length > 0) {
+    prompt += `## Division of Work\n`;
+    for (const d of session.division_of_work) {
+      const tasks = d.tasks || [];
+      const countByStatus = (status: string) => {
+        let count = 0;
+        for (const t of tasks) {
+          if (t.status === status) count++;
+          for (const st of t.subtasks || []) {
+            if (st.status === status) count++;
+          }
+        }
+        return count;
+      };
+      const done = countByStatus('done');
+      const inProgress = countByStatus('in progress');
+      const todo = countByStatus('todo');
+      prompt += `- ${d.title} (Owner: ${d.owner_id}) — Done: ${done}, In Progress: ${inProgress}, Todo: ${todo}\n`;
+      for (const t of tasks) {
+        prompt += `  - [${t.status}] ${t.title}\n`;
+      }
+    }
+    prompt += `\n`;
+  }
+
+  // Chat history (last 50 messages, skip system)
+  const chatHistory = (session.chat_history || []) as any[];
+  const relevantMessages = chatHistory.filter((m: any) => m.role !== 'system').slice(-50);
+  if (relevantMessages.length > 0) {
+    prompt += `## Chat History (last ${relevantMessages.length} messages)\n`;
+    for (const m of relevantMessages) {
+      const sender = m.participant_name || (m.role === 'assistant' ? 'CoGEN' : 'Unknown');
+      prompt += `[${sender}]: ${m.content}\n`;
+    }
+    prompt += `\n`;
+  }
+
+  prompt += `## Instructions\n`;
+  prompt += `Produce a structured summary with these sections:\n`;
+  prompt += `1. **Session Overview** — duration, participants, project\n`;
+  prompt += `2. **Work Accomplished** — per-division task completion summary\n`;
+  prompt += `3. **Key Decisions** — extracted from chat history\n`;
+  prompt += `4. **Blockers & Unresolved Issues**\n`;
+  prompt += `5. **Recommendations for Next Session**\n`;
+  prompt += `Be concise and actionable.`;
+
+  return prompt;
+}
+
+// POST /sessions/:session_id/summary — Generate AI summary and persist to MongoDB
+app.post('/sessions/:session_id/summary', async (req: Request, res: Response) => {
+  try {
+    if (!openaiApiKey) {
+      return res.status(400).json({ ok: false, error: 'No API key' });
+    }
+
+    const session_id = req.params.session_id as string;
+    const coll = await getSessionLogCollection();
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Session not found' });
+    }
+
+    const session = latest[0];
+    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const summaryPrompt = buildSummaryPrompt(session);
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: summaryPrompt }
+      ],
+      max_tokens: 2000
+    });
+
+    const summary = response.choices[0].message.content ?? '';
+
+    // Persist summary to MongoDB
+    await coll.updateOne(
+      { _id: session._id },
+      { $set: { summary } }
+    );
+
+    // Store in sessionStates so guests can access via state polling
+    const existing = sessionStates.get(session_id);
+    if (existing) {
+      (existing as any).summary = summary;
+    }
+
+    res.json({ ok: true, summary });
+  } catch (err) {
+    console.error('Summary generation error:', err);
+    res.status(500).json({ ok: false, error: 'Failed to generate summary' });
+  }
+});
+
+// GET /sessions/:session_id/summary — Retrieve persisted summary
+app.get('/sessions/:session_id/summary', async (req: Request, res: Response) => {
+  try {
+    const session_id = req.params.session_id as string;
+    const coll = await getSessionLogCollection();
+    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
+    if (latest.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Session not found' });
+    }
+
+    const summary = latest[0].summary;
+    if (!summary) {
+      return res.status(404).json({ ok: false, error: 'Summary not yet generated' });
+    }
+
+    res.json({ ok: true, summary });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Failed to fetch summary' });
+  }
+});
 
 const port = process.env.PORT ?? 4000;
 app.listen(port, () => {

@@ -62,6 +62,5 @@ export interface SessionLogDocument {
   division_of_work: Division[];
   chat_history?: ChatMessage[];
   // Allow extra top-level fields in the future
-  // Ideas for more fields: end_time, summary, notes, etc.
   [key: string]: unknown;
 }
