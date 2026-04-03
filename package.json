@@ -2,7 +2,7 @@
   "name": "hello-cigen",
   "displayName": "HELLOCIGEN – Live Share API Testing",
   "description": "Testing VS Code Live Share APIs for collaborative sessions",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.107.0"
@@ -53,17 +53,32 @@
       },
       {
         "command": "helloCigen.setApiKey",
-        "title": "HELLOCIGEN: Set OpenAI API Key"
+        "title": "HELLOCIGEN: Set AI API Key"
       },
       {
         "command": "helloCigen.clearApiKey",
-        "title": "HELLOCIGEN: Clear OpenAI API Key"
+        "title": "HELLOCIGEN: Clear AI API Key"
+      },
+      {
+        "command": "helloCigen.switchProvider",
+        "title": "HELLOCIGEN: Switch AI Provider"
       },
       {
         "command": "helloCigen.restartServer",
         "title": "HELLOCIGEN: Restart Server"
       }
     ],
+    "configuration": {
+      "title": "HelloCigen",
+      "properties": {
+        "helloCigen.aiProvider": {
+          "type": "string",
+          "enum": ["gemini", "openai"],
+          "default": "gemini",
+          "description": "AI provider to use for CoGEN features (Gemini or OpenAI)."
+        }
+      }
+    },
     "_commented_out_commands": [
       "helloCigen.openChat — removed in Phase 5 (chatManager2 deleted, DevChatPanel is sole chat)",
       "helloCigen.openChat2 — removed in Phase 5 (same as openChat)",

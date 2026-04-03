@@ -1,4 +1,4 @@
-import { OpenAI } from 'openai';
+import { createAiClient, AiProviderType } from './aiProvider';
 
 export interface AiDivision {
   id: string;
@@ -22,9 +22,10 @@ export async function generateDivisionOfWork(
   project: any,
   participantCount: number,
   apiKey: string,
-  participants?: ParticipantProfile[]
+  participants?: ParticipantProfile[],
+  provider?: AiProviderType
 ): Promise<AiDivision[]> {
-  const openai = new OpenAI({ apiKey });
+  const { client, model } = createAiClient(apiKey, provider);
 
   const systemPrompt = `You are CoGEN, a collaborative Generative AI agent for software engineering teams. You are acting as a Project Manager.
     You are tasked with managing the whole Software development life cycle, Including planning, division of labor, overview of project completion, and keeping track of progress as well as each member's contribution.
@@ -58,15 +59,23 @@ Output ONLY a valid JSON array (no markdown, no extra text). Example format:
   }
 ]`;
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: taskPrompt }
-    ],
-    max_tokens: 1500
-  });
+  console.log(`[CoGEN AI] Provider: ${provider ?? 'default'}, Model: ${model}, BaseURL: ${client.baseURL}`);
 
-  const content = response.choices[0].message.content || '[]';
-  return JSON.parse(content) as AiDivision[];
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: taskPrompt }
+      ],
+      max_tokens: 1500
+    });
+
+    const content = response.choices[0].message.content || '[]';
+    return JSON.parse(content) as AiDivision[];
+  } catch (err: any) {
+    console.error(`[CoGEN AI] Error — status: ${err?.status}, message: ${err?.message}`);
+    console.error(`[CoGEN AI] Full error:`, JSON.stringify(err, null, 2));
+    throw err;
+  }
 }

@@ -7,18 +7,21 @@ import { Role } from "./utils/liveshareHelpers";
 import { SessionDashboard } from "./ui/sessionDashboard";
 import { TaskTrackerProvider } from "./ui/taskTrackerProvider";
 import { GuestOnboardingView } from "./ui/guestOnboardingView";
+import { getActiveProvider, getSecretKeyName, getProviderConfig, getEnvVarName } from "./utils/aiProvider";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
   output.show(true);
 
   // API Key Pre-flight: show auto-dismissing notification if key is found
-  context.secrets.get('openai-api-key').then(apiKey => {
+  const preflightProvider = getActiveProvider();
+  const preflightConfig = getProviderConfig(preflightProvider);
+  context.secrets.get(preflightConfig.secretKey).then(apiKey => {
     if (apiKey) {
       vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, cancellable: false },
         async (progress) => {
-          progress.report({ message: 'OpenAI API key found.' });
+          progress.report({ message: `${preflightConfig.displayName} API key found.` });
           await new Promise(resolve => setTimeout(resolve, 10000));
         }
       );
@@ -96,15 +99,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       // API key pre-flight check (host only — guests never see this)
-      let apiKey = await context.secrets.get('openai-api-key');
-      if (!apiKey && process.env.OPENAI_API_KEY) {
+      const provider = getActiveProvider();
+      const providerConfig = getProviderConfig(provider);
+      let apiKey = await context.secrets.get(providerConfig.secretKey);
+      if (!apiKey && process.env[getEnvVarName(provider)]) {
         // Auto-store env var in secrets
-        await context.secrets.store('openai-api-key', process.env.OPENAI_API_KEY);
-        apiKey = process.env.OPENAI_API_KEY;
+        const envKey = process.env[getEnvVarName(provider)]!;
+        await context.secrets.store(providerConfig.secretKey, envKey);
+        apiKey = envKey;
       }
       if (!apiKey) {
         const action = await vscode.window.showWarningMessage(
-          "No OpenAI API key set. AI features won't work.",
+          `No ${providerConfig.displayName} API key set. AI features won't work.`,
           "Set API Key"
         );
         if (action === "Set API Key") {
@@ -125,12 +131,12 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         await serverManager.startServer();
 
-        // Forward API key to server for server-side AI chat
+        // Forward API key and provider to server for server-side AI chat
         if (apiKey) {
           await serverManager.httpFetch('/api-key', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ apiKey })
+            body: JSON.stringify({ apiKey, provider })
           }).catch(() => {}); // Non-critical
         }
 
@@ -229,16 +235,18 @@ export function activate(context: vscode.ExtensionContext) {
   const setApiKeyCmd = vscode.commands.registerCommand(
     "helloCigen.setApiKey",
     async () => {
+      const currentProvider = getActiveProvider();
+      const config = getProviderConfig(currentProvider);
       const apiKey = await vscode.window.showInputBox({
-        prompt: "Enter your OpenAI API key",
+        prompt: `Enter your ${config.displayName} API key`,
         password: true,
         ignoreFocusOut: true,
       });
 
       if (apiKey) {
-        await context.secrets.store("openai-api-key", apiKey);
+        await context.secrets.store(config.secretKey, apiKey);
         vscode.window.showInformationMessage(
-          "OpenAI API key saved successfully!"
+          `${config.displayName} API key saved successfully!`
         );
       }
     }
@@ -247,8 +255,28 @@ export function activate(context: vscode.ExtensionContext) {
   const clearApiKeyCmd = vscode.commands.registerCommand(
     "helloCigen.clearApiKey",
     async () => {
-      await context.secrets.delete("openai-api-key");
-      vscode.window.showInformationMessage("OpenAI API key cleared.");
+      const currentProvider = getActiveProvider();
+      const config = getProviderConfig(currentProvider);
+      await context.secrets.delete(config.secretKey);
+      vscode.window.showInformationMessage(`${config.displayName} API key cleared.`);
+    }
+  );
+
+  const switchProviderCmd = vscode.commands.registerCommand(
+    "helloCigen.switchProvider",
+    async () => {
+      const current = getActiveProvider();
+      const picked = await vscode.window.showQuickPick(
+        [
+          { label: 'Google Gemini', value: 'gemini', description: current === 'gemini' ? '(current)' : '' },
+          { label: 'OpenAI', value: 'openai', description: current === 'openai' ? '(current)' : '' }
+        ],
+        { placeHolder: `Current provider: ${getProviderConfig(current).displayName}` }
+      );
+      if (picked && picked.value !== current) {
+        await vscode.workspace.getConfiguration('helloCigen').update('aiProvider', picked.value, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Switched AI provider to ${picked.label}.`);
+      }
     }
   );
 
@@ -256,6 +284,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(restartServerCmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
+  context.subscriptions.push(switchProviderCmd);
 }
 
 export async function deactivate() {

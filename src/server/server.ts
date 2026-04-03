@@ -34,8 +34,21 @@ interface SessionState {
 }
 const sessionStates = new Map<string, SessionState>();
 
-// In-memory API key for server-side AI chat
-let openaiApiKey: string | undefined;
+// In-memory AI config for server-side AI chat
+let aiApiKey: string | undefined;
+let aiProvider: 'openai' | 'gemini' = 'gemini';
+
+function createServerAiClient(): { client: OpenAI; model: string } | null {
+  if (!aiApiKey) return null;
+  const config = aiProvider === 'gemini'
+    ? { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-2.0-flash' }
+    : { baseURL: undefined as string | undefined, model: 'gpt-4' };
+  const client = new OpenAI({
+    apiKey: aiApiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
+  return { client, model: config.model };
+}
 
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
@@ -361,11 +374,12 @@ app.patch('/sessions/:session_id/divisions', async (req: Request, res: Response)
   }
 });
 
-// POST /api-key — Store OpenAI API key for server-side AI chat
+// POST /api-key — Store AI API key and provider for server-side AI chat
 app.post('/api-key', (req: Request, res: Response) => {
-  const { apiKey } = req.body as { apiKey: string };
+  const { apiKey, provider } = req.body as { apiKey: string; provider?: string };
   if (!apiKey) return res.status(400).json({ ok: false, error: 'apiKey is required' });
-  openaiApiKey = apiKey;
+  aiApiKey = apiKey;
+  aiProvider = provider === 'openai' ? 'openai' : 'gemini';
   res.json({ ok: true });
 });
 
@@ -404,13 +418,13 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
 
     // Only generate AI response when the message contains @AI (case-insensitive)
     const mentionsAi = /@ai\b/i.test(content);
-    if (role === 'user' && openaiApiKey && mentionsAi && !skipAi) {
+    const ai = createServerAiClient();
+    if (role === 'user' && ai && mentionsAi && !skipAi) {
       try {
-        const openai = new OpenAI({ apiKey: openaiApiKey });
         const systemPrompt = buildSystemPrompt(session);
         const existingHistory = (session.chat_history || []) as any[];
 
-        const openaiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        const aiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
           { role: 'system', content: systemPrompt },
           ...existingHistory.map((m: any) => ({
             role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
@@ -421,9 +435,9 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
           { role: 'user', content: participant_name ? `[${participant_name}]: ${content}` : content }
         ];
 
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: openaiMessages,
+        const response = await ai.client.chat.completions.create({
+          model: ai.model,
+          messages: aiMessages,
           max_tokens: 1000
         });
 
@@ -583,7 +597,8 @@ function buildSummaryPrompt(session: any): string {
 // POST /sessions/:session_id/summary — Generate AI summary and persist to MongoDB
 app.post('/sessions/:session_id/summary', async (req: Request, res: Response) => {
   try {
-    if (!openaiApiKey) {
+    const ai = createServerAiClient();
+    if (!ai) {
       return res.status(400).json({ ok: false, error: 'No API key' });
     }
 
@@ -595,11 +610,10 @@ app.post('/sessions/:session_id/summary', async (req: Request, res: Response) =>
     }
 
     const session = latest[0];
-    const openai = new OpenAI({ apiKey: openaiApiKey });
     const summaryPrompt = buildSummaryPrompt(session);
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4',
+    const response = await ai.client.chat.completions.create({
+      model: ai.model,
       messages: [
         { role: 'system', content: summaryPrompt }
       ],

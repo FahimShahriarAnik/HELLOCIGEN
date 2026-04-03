@@ -5,6 +5,7 @@ import { createDraftSession } from "../utils/session_log_utils";
 import { NewSessionCreationView } from "./newSessionCreationView";
 import { TaskTrackerProvider } from "./taskTrackerProvider";
 import { DevChatPanel } from "./devChatPanel";
+import { getActiveProvider, getSecretKeyName, getProviderConfig, getEnvVarName } from "../utils/aiProvider";
 
 const SERVER_URL = 'http://localhost:4000';
 const POLL_INTERVAL_MS = 5000;
@@ -779,14 +780,17 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
         return;
       }
 
-      let apiKey = await this.context.secrets.get('openai-api-key');
-      if (!apiKey && process.env.OPENAI_API_KEY) {
-        await this.context.secrets.store('openai-api-key', process.env.OPENAI_API_KEY);
-        apiKey = process.env.OPENAI_API_KEY;
+      const provider = getActiveProvider();
+      const providerConfig = getProviderConfig(provider);
+      let apiKey = await this.context.secrets.get(getSecretKeyName(provider));
+      if (!apiKey && process.env[getEnvVarName(provider)]) {
+        const envKey = process.env[getEnvVarName(provider)]!;
+        await this.context.secrets.store(providerConfig.secretKey, envKey);
+        apiKey = envKey;
       }
       if (!apiKey) {
         const action = await vscode.window.showWarningMessage(
-          "No OpenAI API key set. AI features won't work.",
+          `No ${providerConfig.displayName} API key set. AI features won't work.`,
           "Set API Key"
         );
         if (action === "Set API Key") {
@@ -809,7 +813,7 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
           await serverManager.httpFetch('/api-key', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ apiKey })
+            body: JSON.stringify({ apiKey, provider })
           });
         } catch {
           // Non-critical

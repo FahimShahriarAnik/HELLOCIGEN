@@ -3,6 +3,7 @@ import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
 import { patchSessionLog } from '../utils/session_log_utils';
 import { generateDivisionOfWork, AiDivision, ParticipantProfile } from '../utils/aiUtils';
+import { getActiveProvider, getSecretKeyName, getProviderConfig } from '../utils/aiProvider';
 import { TaskTrackerProvider } from './taskTrackerProvider';
 import { DevelopmentView } from './developmentView';
 
@@ -50,12 +51,14 @@ export class DivisionReviewPanel {
     context: vscode.ExtensionContext,
     panel: vscode.WebviewPanel
   ): Promise<void> {
-    const apiKey = await context.secrets.get('openai-api-key');
+    const provider = getActiveProvider();
+    const providerConfig = getProviderConfig(provider);
+    const apiKey = await context.secrets.get(getSecretKeyName(provider));
     if (!apiKey) {
       panel.webview.postMessage({ type: 'noApiKey' });
       setTimeout(() => {
         vscode.window.showWarningMessage(
-          'No OpenAI API key set. Use "HelloCigen: Set API Key" first.',
+          `No ${providerConfig.displayName} API key set. Use "HelloCigen: Set AI API Key" first.`,
           'Set API Key'
         ).then(choice => {
           if (choice === 'Set API Key') {
@@ -86,7 +89,7 @@ export class DivisionReviewPanel {
 
     let rawDivisions: AiDivision[];
     try {
-      rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey, participantProfiles);
+      rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey, participantProfiles, provider);
     } catch (err) {
       vscode.window.showWarningMessage(`AI division failed: ${err}`);
       panel.dispose();

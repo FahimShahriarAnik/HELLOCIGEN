@@ -4,6 +4,7 @@ import { Project } from '../models/projectConfig';
 import { ServerManager } from '../serverManager';
 import { patchSessionLog } from '../utils/session_log_utils';
 import { generateDivisionOfWork, AiDivision } from '../utils/aiUtils';
+import { getActiveProvider, getSecretKeyName, getProviderConfig } from '../utils/aiProvider';
 import { TaskTrackerProvider } from './taskTrackerProvider';
 import { DevChatPanel } from './devChatPanel';
 import { SessionDashboard } from './sessionDashboard';
@@ -30,7 +31,9 @@ export class DevelopmentView {
     context: vscode.ExtensionContext,
     precomputedDivisions?: DivisionWithOwner[]
   ): Promise<void> {
-    const apiKey = await context.secrets.get('openai-api-key');
+    const provider = getActiveProvider();
+    const providerConfig = getProviderConfig(provider);
+    const apiKey = await context.secrets.get(getSecretKeyName(provider));
 
     let divisions: DivisionWithOwner[];
 
@@ -39,7 +42,7 @@ export class DevelopmentView {
       divisions = precomputedDivisions;
     } else {
       if (!apiKey) {
-        vscode.window.showWarningMessage('No OpenAI API key set — division of work skipped.');
+        vscode.window.showWarningMessage(`No ${providerConfig.displayName} API key set — division of work skipped.`);
         return;
       }
 
@@ -52,7 +55,7 @@ export class DevelopmentView {
         },
         async () => {
           try {
-            const rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey);
+            const rawDivisions = await generateDivisionOfWork(project, participantCount, apiKey, undefined, provider);
             const participantIds = Array.from({ length: participantCount }, (_, i) => `u${i + 1}`);
             computed = rawDivisions.map((d: AiDivision, i: number) => ({
               ...d,
