@@ -9,3 +9,12 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+.claude/**
+.trunk/**
+.secretlintignore
+docs/**
+plan.md
+workflow.md
+task.txt
+CLAUDE.md
+division4.png

@@ -24,6 +24,7 @@ interface Task {
   subtasks?: Task[];   // optional nested subtasks
 }
 
+// ChatMessage kept for reference; active chat now stored in the chatMessages collection (see db.ts).
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -60,7 +61,7 @@ export interface SessionLogDocument {
     [key: string]: unknown;
   };
   division_of_work: Division[];
-  chat_history?: ChatMessage[];
+  // chat_history removed — messages now stored per-document in the chatMessages collection
   // Allow extra top-level fields in the future
   [key: string]: unknown;
 }

@@ -1,10 +1,11 @@
 // src/server.ts
 import express from "express";
-import { getProjectConfigCollection, getSessionLogCollection } from "./db";
+import { getProjectConfigCollection, getSessionLogCollection, getChatMessagesCollection, ChatMessageDoc } from "./db";
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument, Division } from "../models/sessionLog";
 import type { Request, Response } from "express";
 import { OpenAI } from 'openai';
+import { ObjectId } from "mongodb";
 
 
 // Create Express app
@@ -35,6 +36,26 @@ const sessionStates = new Map<string, SessionState>();
 
 // In-memory API key for server-side AI chat
 let openaiApiKey: string | undefined;
+
+// Per-session @AI queue: serializes AI generation so userMsg+aiMsg are always written as a pair.
+const aiQueues = new Map<string, Promise<void>>();
+function enqueueAiGeneration(session_id: string, work: () => Promise<void>): void {
+  const prev = aiQueues.get(session_id) ?? Promise.resolve();
+  const next = prev.then(work).catch(err => console.error('AI queue error:', err));
+  aiQueues.set(session_id, next);
+}
+
+// SSE broadcast: one Set<Response> per session for connected clients.
+const sseClients = new Map<string, Set<Response>>();
+
+function broadcastMessages(session_id: string, messages: ChatMessageDoc[]): void {
+  const clients = sseClients.get(session_id);
+  if (!clients || clients.size === 0) return;
+  const payload = `data: ${JSON.stringify(messages)}\n\n`;
+  clients.forEach(res => {
+    try { res.write(payload); } catch { /* client disconnected */ }
+  });
+}
 
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
@@ -363,107 +384,153 @@ app.post('/api-key', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-// POST /sessions/:session_id/chat — Append a chat message and optionally generate AI response
+// GET /sessions/:session_id/chat/stream — SSE endpoint; pushes new messages to connected clients instantly.
+// Client keeps this connection open for the lifetime of the chat panel.
+app.get('/sessions/:session_id/chat/stream', (req: Request, res: Response) => {
+  const session_id = req.params.session_id as string;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // Register this client
+  if (!sseClients.has(session_id)) sseClients.set(session_id, new Set());
+  sseClients.get(session_id)!.add(res);
+
+  // Send a heartbeat every 20s to keep the connection alive through proxies/firewalls
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.get(session_id)?.delete(res);
+  });
+});
+
+// POST /sessions/:session_id/chat — Insert a chat message.
+// Regular messages: inserted immediately and broadcast via SSE.
+// @AI messages: entire pair (userMsg insert + AI call + aiMsg insert) is queued so chat_history
+// is always userMsg_A → aiMsg_A → userMsg_B → aiMsg_B. Both are broadcast together when ready.
 app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
-  try {
-    const session_id = req.params.session_id as string;
-    const { role, content, participant_name, skipAi } = req.body as {
-      role: 'user' | 'assistant';
-      content: string;
-      participant_name?: string;
-      skipAi?: boolean;
-    };
+  const session_id = req.params.session_id as string;
+  const { role, content, participant_name, skipAi } = req.body as {
+    role: 'user' | 'assistant';
+    content: string;
+    participant_name?: string;
+    skipAi?: boolean;
+  };
 
-    if (!content) return res.status(400).json({ ok: false, error: 'content is required' });
+  if (!content) return res.status(400).json({ ok: false, error: 'content is required' });
 
-    const coll = await getSessionLogCollection();
-    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
-    if (latest.length === 0) return res.status(404).json({ ok: false, error: 'Session not found' });
-    const session = latest[0];
+  const mentionsAi = /@ai\b/i.test(content);
+  const shouldQueue = mentionsAi && role !== 'assistant' && !skipAi && !!openaiApiKey;
 
-    const userMessage = {
-      role: role || 'user',
-      content,
-      participant_name: participant_name || 'Unknown',
-      timestamp: new Date().toISOString()
-    };
+  const userMsgData: ChatMessageDoc = {
+    session_id,
+    role: role || 'user',
+    content,
+    participant_name: participant_name || 'Unknown',
+    timestamp: new Date().toISOString()
+  };
 
-    // Append message to chat_history via atomic $push
-    await coll.updateOne(
-      { _id: session._id },
-      { $push: { chat_history: userMessage } } as any
-    );
+  if (shouldQueue) {
+    // Respond immediately — queue owns both inserts so the pair lands atomically
+    res.json({ ok: true, queued: true });
 
-    const messages: any[] = [userMessage];
+    enqueueAiGeneration(session_id, async () => {
+      const chatColl = await getChatMessagesCollection();
+      const sessionColl = await getSessionLogCollection();
 
-    // Only generate AI response when the message contains @AI (case-insensitive)
-    const mentionsAi = /@ai\b/i.test(content);
-    if (role === 'user' && openaiApiKey && mentionsAi && !skipAi) {
-      try {
-        const openai = new OpenAI({ apiKey: openaiApiKey });
-        const systemPrompt = buildSystemPrompt(session);
-        const existingHistory = (session.chat_history || []) as any[];
+      // Insert user message first
+      const userInsert = await chatColl.insertOne({ ...userMsgData });
+      const insertedUser = { ...userMsgData, _id: userInsert.insertedId };
 
-        const openaiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-          { role: 'system', content: systemPrompt },
-          ...existingHistory.map((m: any) => ({
-            role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-            content: m.participant_name && m.role === 'user'
-              ? `[${m.participant_name}]: ${m.content}`
-              : m.content
-          })),
-          { role: 'user', content: participant_name ? `[${participant_name}]: ${content}` : content }
-        ];
+      // Build AI context from all messages so far (including the one just inserted)
+      const allMessages = await chatColl
+        .find({ session_id })
+        .sort({ _id: 1 })
+        .toArray();
 
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: openaiMessages,
-          max_tokens: 1000
-        });
+      const sessionDocs = await sessionColl
+        .find({ session_id })
+        .sort({ session_number: -1 })
+        .limit(1)
+        .toArray();
+      const session = sessionDocs[0];
 
-        const aiContent = response.choices[0].message.content ?? '';
-        const aiMessage = {
-          role: 'assistant' as const,
-          content: aiContent,
-          participant_name: 'CoGEN',
-          timestamp: new Date().toISOString()
-        };
+      const openai = new OpenAI({ apiKey: openaiApiKey });
+      const openaiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: buildSystemPrompt(session) },
+        ...allMessages.map(m => ({
+          role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: m.role === 'user' ? `[${m.participant_name}]: ${m.content}` : m.content
+        }))
+      ];
 
-        await coll.updateOne(
-          { _id: session._id },
-          { $push: { chat_history: aiMessage } } as any
-        );
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: openaiMessages,
+        max_tokens: 1000
+      });
 
-        messages.push(aiMessage);
-      } catch (aiErr) {
-        console.error('AI chat error:', aiErr);
-        // Don't fail the whole request if AI fails — user message is already persisted
-      }
+      const aiMsgData: ChatMessageDoc = {
+        session_id,
+        role: 'assistant',
+        content: response.choices[0].message.content ?? '',
+        participant_name: 'CoGEN',
+        timestamp: new Date().toISOString()
+      };
+
+      // Insert AI response immediately after user message — queue guarantees no interleaving
+      const aiInsert = await chatColl.insertOne({ ...aiMsgData });
+      const insertedAi = { ...aiMsgData, _id: aiInsert.insertedId };
+
+      // Broadcast both as a pair — all SSE clients receive them together in order
+      broadcastMessages(session_id, [insertedUser, insertedAi]);
+    });
+
+  } else {
+    // Regular message: insert and broadcast immediately
+    try {
+      const chatColl = await getChatMessagesCollection();
+      const result = await chatColl.insertOne({ ...userMsgData });
+      const inserted = { ...userMsgData, _id: result.insertedId };
+      broadcastMessages(session_id, [inserted]);
+      res.json({ ok: true, messageId: result.insertedId });
+    } catch (err) {
+      console.error(err);
+      if (!res.headersSent) res.status(500).json({ ok: false, error: 'Failed to send message' });
     }
-
-    const existingCount = (session.chat_history?.length ?? 0);
-    const total = existingCount + messages.length;
-    res.json({ ok: true, messages, total });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'Failed to process chat message' });
   }
 });
 
-// GET /sessions/:session_id/chat — Retrieve chat messages (supports polling via ?after=N)
+// GET /sessions/:session_id/chat — Cursor-based fetch for history load and fallback polling.
+// ?after=<ObjectId hex string> returns all messages after that _id, sorted ascending.
+// Omit ?after (or pass "0") to fetch all messages from the beginning.
 app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
   try {
     const session_id = req.params.session_id as string;
-    const after = parseInt(req.query.after as string, 10) || 0;
+    const afterParam = req.query.after as string | undefined;
 
-    const coll = await getSessionLogCollection();
-    const latest = await coll.find({ session_id }).sort({ session_number: -1 }).limit(1).toArray();
-    if (latest.length === 0) return res.status(404).json({ ok: false, error: 'Session not found' });
+    const chatColl = await getChatMessagesCollection();
 
-    const chatHistory = (latest[0].chat_history || []) as any[];
-    const messages = chatHistory.slice(after);
+    const query: any = { session_id };
+    if (afterParam && afterParam !== '0') {
+      try {
+        query._id = { $gt: new ObjectId(afterParam) };
+      } catch {
+        // Invalid ObjectId — ignore and return from beginning
+      }
+    }
 
-    res.json({ messages, total: chatHistory.length });
+    const messages = await chatColl.find(query).sort({ _id: 1 }).toArray();
+    const nextCursor = messages.length > 0
+      ? messages[messages.length - 1]._id!.toHexString()
+      : afterParam ?? '0';
+
+    res.json({ messages, nextCursor });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: 'Failed to fetch chat messages' });

@@ -243,6 +243,55 @@ Each phase produces a `.vsix` for testing. If Phase N fails testing, roll back t
 - **Token cost scaling:** Full `chat_history` is sent to OpenAI on every `@AI` call (stateless — no OpenAI-side memory). Token costs grow with conversation length. Consider adding a server-side cap (e.g., last N messages) in a future iteration to avoid hitting token limits on long sessions.
 - **Post-Phase 5 chat landscape:** `chatManager2` is removed. `DivisionReviewPanel` handles task division (pre-active), `DevChatPanel` is the sole team chat (active development).
 
+### 5.8 — Bug Fix: Concurrent @AI Order Disruption + Vanishing Messages ✅
+
+**Root causes (two separate bugs):**
+
+1. **Order disruption:** Multiple users sending `@AI` concurrently triggered parallel OpenAI calls. Whichever call finished first got appended to `chat_history`, making AI responses appear out of order relative to the questions that triggered them. Even with a queue on AI generation alone, user messages were still appended immediately — so the DB order became `userMsg_A → userMsg_B → aiMsg_A → aiMsg_B` instead of the desired `userMsg_A → aiMsg_A → userMsg_B → aiMsg_B`.
+2. **Vanishing messages:** `POST /chat` estimated `total` as `existingCount + messages.length` using the pre-push snapshot of `chat_history`. If another user pushed a message between the snapshot and our push, the returned `total` was behind the real array length. The sender's `lastIndex` was set to this stale value, so their next poll started past the missing message — it was never fetched.
+
+**Fix — server (`src/server/server.ts`):**
+- Added `aiQueues: Map<session_id, Promise<void>>` — a per-session Promise chain. `enqueueAiGeneration()` appends each job onto the tail, serializing all `@AI` work for a session.
+- For `@AI` messages: the **entire operation** (user message append + OpenAI call + AI response append) runs inside the queue job. The POST returns the current `total` immediately without writing anything to DB. This guarantees strict interleave ordering: no other `@AI` write can land between `userMsg_N` and `aiMsg_N` in `chat_history`.
+- For regular (non-`@AI`) messages: appended immediately as before. A `findOne` re-fetch after `$push` returns the real `total`, reflecting any concurrent pushes.
+
+**Fix — client (`src/ui/devChatPanel.ts`):**
+- `@AI` messages: **no optimistic display**. The sender sees their message and the AI response together once the queue processes the job and the next poll picks up the pair. This is the necessary trade-off to guarantee ordering for all participants.
+- Regular messages: optimistic display retained — server appends immediately so there is no duplication risk.
+- Polling now sets `this.lastIndex = data.total` (from server) instead of `this.lastIndex += data.messages.length`. The old increment drifted when concurrent pushes happened between polls; anchoring to the server count fixes it on every tick.
+- `loadMessages()` (initial load) applies the same `lastIndex = data.total` fix.
+
+**Trade-off:** `@AI` senders see a delay (up to poll interval + any preceding queue jobs) before their own message appears. All participants — including the sender — see the conversation in strict `question → answer` pairs.
+
+### 5.9 — Chat Architecture Rebuild: SSE + Separate Collection + Cursor-based Sync ✅
+
+**Root cause of remaining issues:**
+The `chat_history` array-in-document + integer-index polling design had two unfixable properties: (1) `$push` to an array gives no stable per-message identity, so index drift was always possible under concurrent writes; (2) polling every 3s meant messages could appear out of order or be skipped when indices drifted. Patches in 5.6–5.8 reduced the surface but could not eliminate it without changing the data model.
+
+**New data model — `chatMessages` collection:**
+- Each message is its own MongoDB document: `{ _id: ObjectId, session_id, role, content, participant_name, timestamp }`
+- `ObjectId _id` is naturally time-ordered and globally unique — no array index, no gaps, no drift possible
+- Fetch with `find({ session_id, _id: { $gt: lastSeenId } }).sort({ _id: 1 })` always returns exactly the unseen messages regardless of concurrent writes or reconnects
+
+**New server endpoints (`src/server/server.ts`):**
+- `GET /sessions/:id/chat/stream` — SSE endpoint. Keeps a persistent connection per client in `sseClients: Map<session_id, Set<Response>>`. 20s heartbeat prevents proxy/firewall drops. `broadcastMessages()` pushes to all connected clients instantly on every write.
+- `POST /sessions/:id/chat` — Regular messages: `insertOne` → `broadcastMessages` immediately. `@AI` messages: entire pair (user `insertOne` + OpenAI call + AI `insertOne`) runs inside the queue worker, then both are broadcast together. No writes to `sessionLogs.chat_history` anymore.
+- `GET /sessions/:id/chat?after=<ObjectId>` — Cursor-based history fetch. Returns `{ messages, nextCursor }`. Used for initial load and 10s fallback poll.
+
+**New client (`src/ui/devChatPanel.ts`):**
+- `connectSSE()` — persistent HTTP stream via Node's `http` module. Auto-reconnects after 3s on drop or server close.
+- `deliverMessages()` — central dedup gate using `seenIds: Set<string>` (keyed by `_id` hex). Any message arriving via SSE or fallback poll is skipped if already seen. Also advances `lastSeenId` cursor.
+- `startFallbackPoll()` — runs every 10s with cursor. Catches messages missed during any SSE downtime. Replaces the old 3s blind poll.
+- No optimistic display — SSE delivers in <100ms on localhost; send button re-enables immediately after POST returns.
+- "CoGEN is thinking..." indicator shown on `@AI` send, hidden automatically when the AI response arrives via SSE.
+- `chat_history` field removed from `SessionLogDocument`; `ChatMessage` interface kept for reference only.
+
+**Guarantees:**
+- **No loss:** cursor-based fetch always catches up, even after long disconnects
+- **No duplicates:** `seenIds` Set filters any overlap between SSE push and fallback poll
+- **Strict pair ordering:** queue owns both inserts for `@AI` pairs; SSE delivers them atomically to all clients
+- **No index drift:** `ObjectId` cursor replaces fragile integer index entirely
+
 ---
 
 ## Phase 6: Session Completion & AI Summary ✅ COMPLETED (testing pending)
@@ -529,14 +578,15 @@ Phase 6 is already done (server-side). Phase 7 implementation:
 - **Phase 2 is complete** — early draft doc creation, server auto-restart, API key pre-flight, folder guard all implemented
 - **Phase 3 is complete** — chat persistence with real-time sync, server-side AI, guest approval tooltip all implemented
 - **Phase 4 is complete** — synced task tracking with server persistence (PATCH/GET divisions endpoints), 4s polling with fingerprint-based diffing, debounce on local changes, session ID wired through host and guest flows
-- **Phase 5 is complete** — unified team chat with @AI mention trigger, chatManager2 and legacy chatManager deleted, DevChatPanel is the sole chat, system prompt updated for on-demand AI role
+- **Phase 5 is complete** — unified team chat with @AI mention trigger, chatManager2 and legacy chatManager deleted, DevChatPanel is the sole chat, system prompt updated for on-demand AI role; subsequently rebuilt in 5.8–5.9 with SSE + separate collection
 - Each phase must compile and produce a working VSIX before moving to the next
 - The `status` field is now persisted to MongoDB from doc creation (`"draft"` → `"dividing"` → `"active"`)
 - The `initialSessionView` flow now creates a draft doc immediately; `newSessionCreationView` PATCHes it to `"dividing"` (no longer POSTs a new doc)
 - The legacy `helloCigen.start` command flow still uses the old `createSessionLog` POST path
 - OpenAI API key is forwarded from the extension host to the Express server via `POST /api-key`; server-side AI handles all chat responses so guests don't need the key
 - `peerNumber` is the stable unique key for participant matching (replaces nullable `userId`)
-- Chat is synced across all participants via server polling (3s interval in `DevChatPanel`); `chatManager2` persists with `skipAi: true` to avoid duplicate AI calls
+- Chat messages are stored in the `chatMessages` MongoDB collection (one doc per message); `sessionLogs.chat_history` is no longer used
+- `DevChatPanel` uses SSE for real-time push + 10s cursor-based fallback poll; `seenIds` Set deduplicates across both channels
 - `DevChatPanel` auto-opens for both host (from `DevelopmentView`) and guests (from `GuestDevelopmentView`) after session becomes active
 - Auto-dismissing notifications pattern (`withProgress` + timeout) is now used for the API key found notification; can be applied to other informational popups as needed
 - **Phase 6 is complete (testing pending)** — server-only, zero UI changes. Adds `buildSummaryPrompt()` (separate from chat `buildSystemPrompt()`), POST/GET summary endpoints, and completed-status handling in PATCH. All additive — no existing behavior changed.

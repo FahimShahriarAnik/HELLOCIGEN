@@ -1,15 +1,17 @@
 import * as vscode from 'vscode';
+import * as http from 'http';
 
 const CHAT_SERVER_URL = 'http://localhost:4000';
-const POLL_INTERVAL_MS = 3000;
+const FALLBACK_POLL_INTERVAL_MS = 10000; // only fires when SSE is down
 
 export class DevChatPanel {
   private static panel: vscode.WebviewPanel | undefined;
   private static pollTimer: ReturnType<typeof setInterval> | undefined;
-  private static lastIndex = 0;
+  private static sseRequest: http.ClientRequest | undefined;
   private static sessionId = '';
   private static participantName = '';
-  private static sending = false;
+  private static lastSeenId = '0';            // ObjectId hex cursor
+  private static seenIds = new Set<string>(); // dedup guard
 
   static openOrReveal(sessionId: string, participantName: string, projectTitle: string): void {
     this.sessionId = sessionId;
@@ -19,6 +21,10 @@ export class DevChatPanel {
       this.panel.reveal(vscode.ViewColumn.Beside);
       return;
     }
+
+    // Reset state for a fresh panel
+    this.lastSeenId = '0';
+    this.seenIds.clear();
 
     this.panel = vscode.window.createWebviewPanel(
       'devChat',
@@ -30,6 +36,7 @@ export class DevChatPanel {
     this.panel.webview.html = this.getHtml(projectTitle, participantName);
     this.panel.onDidDispose(() => {
       this.stopPolling();
+      this.disconnectSSE();
       this.panel = undefined;
     });
 
@@ -39,79 +46,144 @@ export class DevChatPanel {
       }
     });
 
-    // Load existing messages and start polling
-    this.lastIndex = 0;
-    this.loadMessages();
-    this.startPolling();
+    // Load history, then open SSE stream, then start fallback poll
+    this.loadMessages().then(() => {
+      this.connectSSE();
+      this.startFallbackPoll();
+    });
   }
 
+  // ─── Send ────────────────────────────────────────────────────────────────────
+
   private static async sendMessage(text: string): Promise<void> {
-    this.sending = true;
+    const mentionsAi = /@ai\b/i.test(text);
     try {
       const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: 'user',
-          content: text,
-          participant_name: this.participantName
-        })
+        body: JSON.stringify({ role: 'user', content: text, participant_name: this.participantName })
       });
-
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-      const data = await resp.json() as any;
-      if (data.messages?.length > 0) {
-        this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
-        this.lastIndex = data.total ?? (this.lastIndex + data.messages.length);
+      if (mentionsAi) {
+        // Pair will arrive together via SSE once queue processes it
+        this.panel?.webview.postMessage({ type: 'showThinking' });
       }
+      // Re-enable input immediately after POST — no need to wait for SSE
+      this.panel?.webview.postMessage({ type: 'enableSend' });
     } catch (err) {
       this.panel?.webview.postMessage({ type: 'error', text: String(err) });
-    } finally {
-      this.sending = false;
+      this.panel?.webview.postMessage({ type: 'enableSend' });
     }
   }
+
+  // ─── History load ────────────────────────────────────────────────────────────
 
   private static async loadMessages(): Promise<void> {
     try {
       const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=0`);
       if (!resp.ok) return;
-
       const data = await resp.json() as any;
-      if (data.messages?.length > 0) {
-        this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
-        this.lastIndex = data.total ?? data.messages.length;
+      this.deliverMessages(data.messages ?? []);
+      if (data.nextCursor && data.nextCursor !== '0') this.lastSeenId = data.nextCursor;
+    } catch { /* server not ready yet */ }
+  }
+
+  // ─── SSE connection ──────────────────────────────────────────────────────────
+
+  private static connectSSE(): void {
+    this.disconnectSSE();
+
+    const path = `/sessions/${this.sessionId}/chat/stream`;
+    let buffer = '';
+
+    const req = http.get(
+      { hostname: 'localhost', port: 4000, path, headers: { Accept: 'text/event-stream' } },
+      (res) => {
+        res.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+          // SSE frames are separated by double newlines
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() ?? '';
+          for (const frame of frames) {
+            for (const line of frame.split('\n')) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const messages = JSON.parse(line.slice(6));
+                  this.deliverMessages(messages);
+                } catch { /* malformed frame */ }
+              }
+            }
+          }
+        });
+
+        res.on('end', () => {
+          // Server closed — reconnect after a short delay
+          if (this.panel) setTimeout(() => this.connectSSE(), 3000);
+        });
+        res.on('error', () => {
+          if (this.panel) setTimeout(() => this.connectSSE(), 3000);
+        });
       }
-    } catch {
-      // Server not ready yet
+    );
+
+    req.on('error', () => {
+      if (this.panel) setTimeout(() => this.connectSSE(), 3000);
+    });
+
+    this.sseRequest = req;
+  }
+
+  private static disconnectSSE(): void {
+    if (this.sseRequest) {
+      this.sseRequest.destroy();
+      this.sseRequest = undefined;
     }
   }
 
-  private static startPolling(): void {
+  // ─── Fallback poll (catches up if SSE was down) ──────────────────────────────
+
+  private static startFallbackPoll(): void {
     this.stopPolling();
     this.pollTimer = setInterval(async () => {
-      if (this.sending) return;
       try {
-        const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=${this.lastIndex}`);
+        const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=${this.lastSeenId}`);
         if (!resp.ok) return;
-
         const data = await resp.json() as any;
-        if (data.messages?.length > 0) {
-          this.panel?.webview.postMessage({ type: 'newMessages', messages: data.messages });
-          this.lastIndex += data.messages.length;
-        }
-      } catch {
-        // Server may not be reachable; keep polling
-      }
-    }, POLL_INTERVAL_MS);
+        this.deliverMessages(data.messages ?? []);
+        if (data.nextCursor && data.nextCursor !== '0') this.lastSeenId = data.nextCursor;
+      } catch { /* server unreachable */ }
+    }, FALLBACK_POLL_INTERVAL_MS);
   }
 
   private static stopPolling(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = undefined; }
+  }
+
+  // ─── Dedup + deliver ─────────────────────────────────────────────────────────
+
+  private static deliverMessages(messages: any[]): void {
+    const fresh = messages.filter(m => {
+      const id = m._id?.toString?.() ?? String(m._id);
+      if (!id || id === 'undefined' || this.seenIds.has(id)) return false;
+      this.seenIds.add(id);
+      return true;
+    });
+    if (fresh.length === 0) return;
+
+    // Advance cursor to last received message
+    const lastId = fresh[fresh.length - 1]._id?.toString?.();
+    if (lastId && lastId !== 'undefined') this.lastSeenId = lastId;
+
+    this.panel?.webview.postMessage({ type: 'newMessages', messages: fresh });
+
+    // Hide thinking indicator if an AI response arrived
+    if (fresh.some((m: any) => m.role === 'assistant')) {
+      this.panel?.webview.postMessage({ type: 'hideThinking' });
     }
   }
+
+  // ─── HTML ─────────────────────────────────────────────────────────────────────
 
   private static getHtml(projectTitle: string, participantName: string): string {
     const escapedTitle = projectTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -171,10 +243,7 @@ export class DevChatPanel {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
     }
-    .msg.user .sender {
-      text-align: right;
-      opacity: 0.8;
-    }
+    .msg.user .sender { text-align: right; opacity: 0.8; }
     .msg.assistant {
       align-self: flex-start;
       background: var(--vscode-input-background);
@@ -186,6 +255,14 @@ export class DevChatPanel {
       font-size: 11px;
       background: none;
       opacity: 0.8;
+    }
+    .thinking {
+      align-self: flex-start;
+      font-size: 11px;
+      opacity: 0.5;
+      font-style: italic;
+      display: none;
+      padding: 4px 8px;
     }
     .input-row {
       display: flex;
@@ -227,21 +304,27 @@ export class DevChatPanel {
 </head>
 <body>
   <div class="header">CoGEN Chat &middot; ${escapedTitle}</div>
-  <div class="messages" id="msgs"></div>
+  <div class="messages" id="msgs">
+    <div class="thinking" id="thinking">CoGEN is thinking...</div>
+  </div>
   <div class="input-row">
     <textarea id="input" placeholder="Type a message... Use @AI to ask the AI" rows="1"></textarea>
     <button id="sendBtn">Send</button>
   </div>
   <script>
     const vscode = acquireVsCodeApi();
-    const msgs = document.getElementById('msgs');
+    const msgsEl = document.getElementById('msgs');
+    const thinkingEl = document.getElementById('thinking');
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
     const myName = '${escapedName}';
 
     function addMsg(msg) {
+      // Move thinking indicator to end of list when new messages arrive
+      msgsEl.removeChild(thinkingEl);
+
       const el = document.createElement('div');
-      el.className = 'msg ' + msg.role;
+      el.className = 'msg ' + (msg.role === 'assistant' ? 'assistant' : 'user');
 
       const senderDiv = document.createElement('div');
       senderDiv.className = 'sender';
@@ -252,8 +335,9 @@ export class DevChatPanel {
 
       el.appendChild(senderDiv);
       el.appendChild(contentDiv);
-      msgs.appendChild(el);
-      msgs.scrollTop = msgs.scrollHeight;
+      msgsEl.appendChild(el);
+      msgsEl.appendChild(thinkingEl);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
     }
 
     function send() {
@@ -278,14 +362,23 @@ export class DevChatPanel {
       const d = e.data;
       if (d.type === 'newMessages' && d.messages) {
         d.messages.forEach(m => addMsg(m));
+      }
+      if (d.type === 'enableSend') {
         sendBtn.disabled = false;
+      }
+      if (d.type === 'showThinking') {
+        thinkingEl.style.display = 'block';
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (d.type === 'hideThinking') {
+        thinkingEl.style.display = 'none';
       }
       if (d.type === 'error') {
         const el = document.createElement('div');
         el.className = 'msg error';
         el.textContent = 'Error: ' + d.text;
-        msgs.appendChild(el);
-        sendBtn.disabled = false;
+        msgsEl.insertBefore(el, thinkingEl);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
       }
     });
   </script>

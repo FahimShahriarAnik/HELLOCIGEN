@@ -1,21 +1,15 @@
 // src/db.ts
-import { MongoClient, Db, Collection } from "mongodb"; //Brings in the MongoDB driver types
-// Imports your TypeScript interfaces 
+import { MongoClient, Db, Collection, ObjectId } from "mongodb";
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument } from "../models/sessionLog";
 import { MONGO_URI } from "../utils/config.local";
 
-
 const uri = MONGO_URI;
-
 const dbName = "session_logs";
 
-// Module-level variables
 let client: MongoClient;
 let db: Db;
 
-// Connect to MongoDB and return the database instance
-// Any caller can await connectToDb() to be sure the connection is ready.
 export async function connectToDb(): Promise<Db> {
   if (!client) {
     client = new MongoClient(uri);
@@ -28,13 +22,27 @@ export async function connectToDb(): Promise<Db> {
   return db;
 }
 
-// Get the Project Config collection
 export async function getProjectConfigCollection(): Promise<Collection<ProjectConfigDocument>> {
   const database = await connectToDb();
-  return database.collection<ProjectConfigDocument>("projectConfigs"); // The string "projectConfigs" is the Mongo collection name; the generic type parameter gives you TS types for that collection.
+  return database.collection<ProjectConfigDocument>("projectConfigs");
 }
 
 export async function getSessionLogCollection(): Promise<Collection<SessionLogDocument>> {
   const database = await connectToDb();
   return database.collection<SessionLogDocument>("sessionLogs");
+}
+
+// Each chat message is its own document — enables cursor-based fetch and atomic inserts.
+export interface ChatMessageDoc {
+  _id?: ObjectId;
+  session_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  participant_name: string;
+  timestamp: string;
+}
+
+export async function getChatMessagesCollection(): Promise<Collection<ChatMessageDoc>> {
+  const database = await connectToDb();
+  return database.collection<ChatMessageDoc>("chatMessages");
 }
