@@ -46,7 +46,7 @@
 
 **File:** `src/server/server.ts:668–673`
 **Trigger:** `POST /sessions/:id/summary` at session end
-**Model:** `gpt-4` · `max_tokens: 2000`
+**Model:** `gpt-4` · `max_tokens: 500`
 
 **System prompt only** (built by `buildSummaryPrompt()`), includes:
 - CoGEN identity as retrospective generator
@@ -55,7 +55,8 @@
 - All participants with roles, strengths, weaknesses
 - Division of work with per-task completion counts and `[status] task title` per task
 - Last 50 chat messages for key decision extraction
-- Requested output: 5-section retrospective (Overview, Work Accomplished, Key Decisions, Blockers, Recommendations)
+- Requested output under 300 words: 5-section retrospective (Overview, Work Accomplished as markdown table, Key Decisions, Blockers, Recommendations)
+- Output format: bullet points only, no prose paragraphs; Work Accomplished as `Division | Owner | Done | In Progress | Todo` table
 
 ---
 

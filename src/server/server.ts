@@ -656,13 +656,13 @@ function buildSummaryPrompt(session: any): string {
   }
 
   prompt += `## Instructions\n`;
-  prompt += `Produce a structured summary with these sections:\n`;
-  prompt += `1. **Session Overview** — duration, participants, project\n`;
-  prompt += `2. **Work Accomplished** — per-division task completion summary\n`;
+  prompt += `Produce a structured summary under 300 words with these sections:\n`;
+  prompt += `1. **Session Overview** — duration, participants, project (1-2 lines)\n`;
+  prompt += `2. **Work Accomplished** — render as a markdown table with columns: Division | Owner | Done | In Progress | Todo\n`;
   prompt += `3. **Key Decisions** — extracted from chat history\n`;
   prompt += `4. **Blockers & Unresolved Issues**\n`;
   prompt += `5. **Recommendations for Next Session**\n`;
-  prompt += `Be concise and actionable.`;
+  prompt += `Use bullet points only — no prose paragraphs. Keep the entire response under 300 words.`;
 
   return prompt;
 }
@@ -690,7 +690,7 @@ app.post('/sessions/:session_id/summary', async (req: Request, res: Response) =>
       messages: [
         { role: 'system', content: summaryPrompt }
       ],
-      max_tokens: 2000
+      max_tokens: 500
     });
 
     const summary = response.choices[0].message.content ?? '';
