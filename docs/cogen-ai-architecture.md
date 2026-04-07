@@ -61,14 +61,14 @@
 
 ## Part 2 — Known Gaps (Current State)
 
-| # | Location | Issue |
-|---|----------|-------|
-| 1 | `buildSystemPrompt()` `server.ts:556` | Task `status` (`todo`/`in progress`/`done`) excluded — AI cannot answer progress questions |
-| 2 | `buildSystemPrompt()` `server.ts:555–558` | `owner_id` (e.g. `u1`) never resolved to participant name — meaningless to GPT-4 |
-| 3 | `buildSystemPrompt()` | Session metadata missing: session number, name, start time, elapsed duration, complexity |
-| 4 | `buildSystemPrompt()` | Previous session summary never included — continuation sessions have no history |
-| 5 | Chat `@AI` handler `server.ts:457–460` | Chat history is unbounded — no truncation before sending to GPT-4 (token limit risk) |
-| 6 | `aiUtils.ts:71` | `JSON.parse(content) as AiDivision[]` — no runtime validation; silent failures if AI returns wrong shape |
+| # | Location | Issue | Status |
+|---|----------|-------|--------|
+| 1 | `buildSystemPrompt()` `server.ts:556` | Task `status` (`todo`/`in progress`/`done`) excluded — AI cannot answer progress questions | ✅ Fixed |
+| 2 | `buildSystemPrompt()` `server.ts:555–558` | `owner_id` (e.g. `u1`) never resolved to participant name — meaningless to GPT-4 | ✅ Fixed |
+| 3 | `buildSystemPrompt()` | Session metadata missing: session number, name, start time, elapsed duration, complexity | Open |
+| 4 | `buildSystemPrompt()` | Previous session summary never included — continuation sessions have no history | Open |
+| 5 | Chat `@AI` handler `server.ts:457–460` | Chat history is unbounded — no truncation before sending to GPT-4 (token limit risk) | Open |
+| 6 | `aiUtils.ts:71` | `JSON.parse(content) as AiDivision[]` — no runtime validation; silent failures if AI returns wrong shape | Open |
 
 ---
 
@@ -76,17 +76,17 @@
 
 All changes are confined to `src/server/server.ts`. No new files, no schema changes.
 
-### Priority 1 — Resolve `owner_id` → participant name
+### Priority 1 — Resolve `owner_id` → participant name ✅ DONE
 **Zero cost.** Build a `nameById` map from `participants[]` and use it in division rendering.
 ```
 BEFORE: Teammate 1 (u1): Auth Module
-AFTER:  Alice (Auth Module) — 2/5 done, 1 in progress, 2 todo
+AFTER:  Alice (Auth Module) — 2 done, 1 in progress, 2 todo
 ```
 
-### Priority 2 — Task + subtask status with counts *(highest value)*
-**Zero cost.** Replace bare-title task formatter with rich status formatter. Reuse `countByStatus` pattern from `buildSummaryPrompt` (lines 605–614).
+### Priority 2 — Task + subtask status with counts ✅ DONE
+**Zero cost.** Replace bare-title task formatter with rich status formatter. Reuses `countByStatus` pattern from `buildSummaryPrompt` (lines 605–614).
 ```
-Alice (Auth Module) — 2/5 done, 1 in progress, 2 todo
+Alice (Auth Module) — 2 done, 1 in progress, 2 todo
   - [done] Build login form
   - [in progress] Set up DB schema
       - [done] Write migration
@@ -161,8 +161,8 @@ allMessages.reverse(); // restore chronological order
 
 ## Implementation Order
 
-1. `owner_id` → name resolution — test: `@AI who owns the auth module?`
-2. Task status + subtask formatting — test: `@AI what's left to do?`
+1. ✅ `owner_id` → name resolution — test: `@AI who owns the auth module?`
+2. ✅ Task status + subtask formatting — test: `@AI what's left to do?`
 3. Chat history truncation (cap to 40) — test: long session with 100+ messages
 4. Session metadata line — test: `@AI how long have we been running?`
 5. Participant role + join offset — test: `@AI who joined late?`

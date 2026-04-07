@@ -552,9 +552,29 @@ function buildSystemPrompt(session: any): string {
     prompt += `Description: ${session.project_details.description ?? ''}\n\n`;
   }
   if (session.division_of_work?.length > 0) {
-    const divisionSummary = session.division_of_work.map((d: any, i: number) => {
-      const tasks = (d.tasks || []).map((t: any) => `  - ${t.title}`).join('\n');
-      return `Teammate ${i + 1} (${d.owner_id}): ${d.title}\n${tasks}`;
+    const nameById: Record<string, string> = {};
+    for (const p of session.participants || []) {
+      nameById[p.id] = p.name;
+    }
+    const divisionSummary = session.division_of_work.map((d: any) => {
+      const ownerName = nameById[d.owner_id] ?? d.owner_id;
+      const tasks = d.tasks || [];
+      const countByStatus = (status: string) => {
+        let count = 0;
+        for (const t of tasks) {
+          if (t.status === status) count++;
+          for (const st of t.subtasks || []) { if (st.status === status) count++; }
+        }
+        return count;
+      };
+      const done = countByStatus('done');
+      const inProgress = countByStatus('in progress');
+      const todo = countByStatus('todo');
+      const taskLines = tasks.map((t: any) => {
+        const subtaskLines = (t.subtasks || []).map((st: any) => `      - [${st.status}] ${st.title}`).join('\n');
+        return `  - [${t.status}] ${t.title}` + (subtaskLines ? '\n' + subtaskLines : '');
+      }).join('\n');
+      return `${ownerName} (${d.title}) — ${done} done, ${inProgress} in progress, ${todo} todo\n${taskLines}`;
     }).join('\n\n');
     prompt += `Task breakdown:\n${divisionSummary}\n\n`;
   }

@@ -572,6 +572,32 @@ Phase 6 is already done (server-side). Phase 7 implementation:
 
 ---
 
+## Phase 8: AI Context Improvements — Task Status in @AI Calls ✅ COMPLETED
+
+**Branch:** `chat-queue`
+**Issues addressed:** `buildSystemPrompt()` sent task titles only — no status (`todo`/`in progress`/`done`) and raw `owner_id` values instead of participant names. AI could not answer progress questions like "what's left?" or "who owns the auth module?"
+**Status:** Implemented and compiled.
+
+### 8.1 — Resolve `owner_id` → Participant Name ✅
+
+- `buildSystemPrompt()` in `src/server/server.ts` now builds a `nameById: Record<string, string>` map from `session.participants` before rendering divisions
+- Division header renders as `Alice (Auth Module)` instead of `Teammate 1 (u1)`
+
+### 8.2 — Task + Subtask Status with Counts ✅
+
+- Each division header now shows `done/in progress/todo` counts (e.g. `Alice (Auth Module) — 2 done, 1 in progress, 2 todo`)
+- Each task renders with `[status]` prefix: `  - [done] Build login form`
+- Each subtask renders indented with `[status]` prefix: `      - [todo] Seed data`
+- Reuses `countByStatus()` pattern already present in `buildSummaryPrompt()` (lines 605–614)
+
+### 8.3 — Verification
+
+- [x] `npm run compile` — no TypeScript errors
+- [ ] Start session with active task statuses → send `@AI what's left to do?` → AI correctly reports todo/in-progress tasks by owner name
+- [ ] Send `@AI who owns the auth module?` → AI resolves owner name, not `u1`/`u2`
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
@@ -596,4 +622,5 @@ Phase 6 is already done (server-side). Phase 7 implementation:
 - **Phase 7 session-end design:** Pre-Phase 7, neither host nor guest has any session-end handling. Phase 7 adds: host-triggered `endSession()` (manual button + Live Share disconnect + VS Code close via `deactivate()`), guest-side detection via sidebar polling detecting `"completed"` status. On session end, `endSession()` and guest-side completion detection both call `DevChatPanel.dispose()` (new public static method) and `TaskTrackerProvider.instance?.dispose()` to stop all polling loops and close the chat panel. `GuestDevelopmentView` stays open (static HTML, no polling) — user can close manually.
 - **`deactivate()` becomes async in Phase 7** — calls `SessionDashboard.instance?.endSession()` before `serverManager.stopServer()` to persist session completion on VS Code close.
 - **`isHost` field is public** on `SessionDashboard` — needed by `extension.ts` to guard auto-end so only the host triggers `endSession()` on Live Share disconnect. Guests detect completion via their own sidebar polling.
+- **Phase 8 is complete** — `buildSystemPrompt()` now resolves `owner_id` to participant names and includes full task/subtask `[status]` with per-division done/in-progress/todo counts. AI can now answer progress and ownership questions accurately during @AI chat calls.
 - **Security (future improvement):** The OpenAI API key is stored in plaintext in server memory and any Live Share participant can trigger API calls via server endpoints (e.g., @AI messages, summary generation) using the host's key. Risk is low (localhost-only server, encrypted Live Share tunnel, trusted collaborators), but future iterations should consider: rate limiting per participant, per-session token usage caps, or scoped API keys to prevent abuse.
