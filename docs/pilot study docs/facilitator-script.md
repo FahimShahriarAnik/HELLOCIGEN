@@ -1,276 +1,284 @@
-# Facilitator Script — HelloCigen Pilot Study
+# Facilitator Script — CoGEN Pilot Study
 
-**Total duration:** ~80 minutes | **Your role:** Facilitator + Live Share host
+**Total duration:** ~82 minutes | **Your role:** Facilitator (you are NOT the Live Share host — one of the participants will host)
 
 ---
 
 ## Pre-Session Setup (15–20 min before participants arrive)
 
-- [ ] Start VS Code, load the project, run `npm run compile`
-- [ ] Verify Express server starts (port 4000)
-- [ ] Verify MongoDB connection is live
+- [ ] Confirm the participant who will act as **Live Share host** knows their role
+- [ ] **Pre-install the CoGEN extension (.vsix) on all machines** — do not leave this for the session
+- [ ] Start VS Code on host machine, load the project, run `npm run compile`
+- [ ] Verify Express server starts (port 4000) and MongoDB connection is live
 - [ ] Test @AI chat with a throwaway message
-- [ ] Prepare the project description participants will build
-- [ ] Set up screen recording software (record all screens if possible)
-- [ ] Have consent forms printed and ready
+- [ ] Prepare the coding project — repo open and ready on host machine
+- [ ] Set up screen recording on all machines
+- [ ] Have consent forms printed — confirm they include disclosure of screen recording and interaction data logging (chat messages, task events)
 - [ ] Have the **pre-survey Google Form link** ready to share
 - [ ] Have the **post-survey Google Form link** ready to share
-- [ ] Have a piece of paper/whiteboard ready for Disney Method (write their top 3)
-- [ ] Brief your note-taker: timer starts when coding begins
+- [ ] Have paper/whiteboard ready for Disney Method (you will write the group's top 3 on this)
+- [ ] Brief your note-taker: their timer starts when coding begins at 0:20
+
+**[SELF NOTE]** Before participants arrive, decide which participant you'll assign to each Disney role (Dreamer / Realist / Critic) once you've observed them during coding. You can revise this during Phase 3.
+
+**[SELF NOTE]** You will give a brief walkthrough of how CoGEN works before coding starts — see the separate system overview document/presentation for this.
 
 ---
 
-## Phase 0: Welcome, Consent & Pre-Survey (0:00 – 0:10)
+## Phase 0: Welcome & Consent (0:00 – 0:05)
 
 **SAY:**
-> "Thanks for joining today. We're testing a VS Code extension called HelloCigen — an AI-powered project manager for collaborative coding sessions. Before we start, I need you to sign a consent form and fill out a short background survey. It takes about 5 minutes."
+> "Thanks for joining today. We're running a study on CoGEN — an AI-powered project manager built for collaborative coding sessions. Before we start, please sign the consent form. This covers screen and audio recording, and the fact that the platform logs interaction data like chat messages and task events."
 
 **DO:**
-- Hand out consent forms — wait for all signatures before continuing
-- Share the **pre-survey link** (paste in chat or show on screen)
-- Give them 5 minutes to complete it silently
-- While they fill it out, set up VS Code on their machines if needed
-
-**AFTER PRE-SURVEY:**
-> "Great. Now let me explain what we're doing today."
-
-> "Today's goal is to **test this platform — not to finish a coding project.** We don't care if the code compiles at the end. We care about your experience using the tool. If something confuses you, that's useful data for us, not a failure."
-
-> "A few ground rules:"
-
-> "**1. Think aloud.** Narrate what you're thinking as you work — 'I'm not sure where to put this', 'I don't know what this button does.' Don't filter yourself."
-
-> "**2. @AI is your project manager, not a coding assistant.** Think of it as a team lead who knows the project plan but won't write code for you. Use it for things like:
-> - 'What should I work on next?'
-> - 'Can you explain my task?'
-> - 'How does my work connect to what others are doing?'
-> - 'I'm not sure where to start — any guidance?'
->
-> Coordination, planning, and task questions go to @AI."
-
-> "**3. For actual coding — syntax, debugging, how-to — use your own tools.** Copilot, ChatGPT, whatever you normally use. Those are fine."
-
-> "**4. We're recording screen and audio.** This is already covered in the consent form."
+- Hand out consent forms — wait for all signatures before proceeding
 
 ---
 
-## Phase 1: Setup & Onboarding (0:10 – 0:15)
-
-**DO:**
-- Help each participant install the extension (.vsix file) if not already done
-- Create the Live Share session — you are the host
-- Have participants join the Live Share link
-- Walk through the guest onboarding flow together (name + strengths/weaknesses form)
+## Phase 0b: Pre-Survey (0:05 – 0:10)
 
 **SAY:**
-> "Everyone fill in your name and a quick note about your strengths and weaknesses as a developer. This helps the AI divide tasks. Be honest — it matters."
+> "Please fill out this short background survey before we begin. It takes about 5 minutes and helps us understand your experience level. There are no right or wrong answers."
 
-**Once all guests are joined and profiles submitted:**
-> "Good. Now the AI is going to look at our project and divide it into tasks."
+**DO:**
+- Share the **pre-survey link**
+- Give 5 minutes to complete silently
+- Do not answer questions about the tool during this time
 
 ---
 
-## Phase 2: AI Task Division (0:15 – 0:20)
+## Phase 1: System Overview & Setup (0:10 – 0:18)
+
+**[SELF NOTE]** Give a brief walkthrough of how CoGEN works — see separate system overview presentation. Cover: what @AI is for, what the task tracker shows, what the team chat is for. Keep it under 5 minutes. Do not over-explain — let them discover.
+
+**SAY (after overview):**
+> "One thing to keep in mind: **@AI is your project manager, not a coding assistant.** Use it for coordination and planning questions — like 'what should I work on?', 'how does my task connect to theirs?', 'I'm stuck on where to start.' For actual coding help, use your own tools — Copilot, ChatGPT, whatever you normally use."
+
+> "The goal today is to **experience this platform and give us honest feedback** — not to build something complete. There's no pressure to finish."
+
+> "One more thing: if something surprises you or confuses you during coding, just say it out loud. You don't need to commentate everything — just the moments that stand out. This helps us a lot."
+
+**[SELF NOTE]** This lightweight think-aloud request is intentional. Without it, your note-taker is guessing what participants are thinking. Even brief verbalisations ("I'm not sure what this does") give you in-situ data that the post-survey can't capture retrospectively.
+
+**DO:**
+- Have the **host participant** create the Live Share session
+- Have the other two participants join the Live Share link
+- Walk through the guest onboarding flow (name + strengths/weaknesses form)
+
+**SAY:**
+> "Fill in your name and a quick note about your strengths and weaknesses as a developer. The AI uses this to divide tasks — be honest, it affects your assignment."
+
+**Once all guests have joined and submitted profiles:**
+> "Good. The AI will now analyse the project and divide it into tasks."
+
+---
+
+## Phase 2: AI Task Division (0:18 – 0:23)
+
+**[SELF NOTE]** You trigger the task division — this is a facilitator action, not a participant action.
 
 **DO:**
 - Trigger the AI task division
 - Give participants 1–2 minutes to read their assigned tasks silently
 
 **SAY:**
-> "Take a moment to read your assigned tasks. The AI divided the project based on the project description and your profiles."
+> "Take a moment to read your tasks. The AI divided the project based on the description and your developer profiles."
 
 **ASK:**
-> "Does everyone understand their tasks? Any questions before we start?"
+> "Does everyone understand what they're working on? Any questions before we start?"
 
 **REMIND:**
-> "Remember — @AI for project questions, your own tools for coding. Focus on experiencing the platform, not racing to finish."
+> "@AI for coordination, your own tools for coding. Focus on experiencing the platform."
 
-**DO NOT:**
-- Ask evaluative questions about the task division — save for post-survey and discussion
-- Intervene unless someone is genuinely confused about what their task means
+**DO NOT** ask evaluative questions about the task split — save for post-survey and discussion.
 
 ---
 
-## Phase 3: Coding Session (0:20 – 0:50)
+## Phase 3: Coding Session (0:23 – 0:53)
 
 **SAY:**
-> "Go ahead and start working. Remember to think aloud. Try out @AI, check the task tracker, use the team chat — explore everything. I'll be here for technical issues but I won't interrupt."
+> "Go ahead. If something surprises or confuses you, say it out loud. I'll only step in for technical issues."
 
 ---
 
-**YOUR ROLE DURING CODING — stay silent unless:**
-- There is a technical failure (server crash, chat down, task tracker broken)
-- Someone has been completely stuck for more than 3 minutes
+**YOUR ROLE — stay silent unless:**
+- There is a technical failure (server crash, chat not loading, task tracker broken)
+- A participant has been stuck with zero progress for more than 3 minutes
 
 **If the tool breaks:**
-Fix it quickly → note the timestamp → say "Sorry about that, please continue" → go quiet
+Fix it quickly → note the exact timestamp → "Sorry about that, please continue" → go quiet
 
-**If someone asks @AI a coding question:**
-> "For coding questions use your own tools — Copilot, ChatGPT, etc. @AI is for coordination, like 'what should I work on?' or 'how does my task relate to theirs?'"
+**If someone uses @AI for a coding question:**
+> "For coding questions use your own tools. @AI is for project coordination — like 'what should I do next?'"
 
 **If someone is stuck for >3 min:**
-> "What are you trying to do right now?" — gets them talking without evaluating
+> "What are you trying to do right now?" — gets them talking without leading their evaluation
 
 ---
 
-**AT 0:40 (10 min warning):**
-> "About 10 minutes left. If there's a feature you haven't tried yet — @AI chat, task tracker, team chat — now's a good time."
+**AT 0:43 — 10 minute warning:**
+> "About 10 minutes left. If there's a feature you haven't tried yet — @AI, task tracker, team chat — now's a good time."
 
-**AT 0:48 (2 min warning):**
-> "Let's wrap up in 2 minutes. Finish what you're doing and save your work."
+**AT 0:51 — 2 minute warning:**
+> "Let's wrap up in 2 minutes. Save your work."
+
+**[SELF NOTE]** During coding, observe and finalise your Disney role assignments:
+- **Dreamer** → most vocal / enthusiastic
+- **Realist** → most pragmatic / focused on getting things done
+- **Critic** → most frustrated / skeptical
 
 ---
 
-## Phase 4: Post-Survey (0:50 – 0:58)
+## Phase 4: Post-Survey (0:53 – 1:01)
 
 **SAY:**
-> "Great work. Before we talk as a group, I need each of you to fill out a short survey individually. Please don't discuss with each other yet — answer based entirely on your own experience. Takes about 8 minutes."
+> "Before we talk as a group, please fill out this survey individually. Don't discuss with each other yet — answer based on your own experience. It takes about 8 minutes."
 
 **DO:**
-- Share the **post-survey Google Form link** (paste in chat or display on screen)
+- Share the **post-survey link**
 - Start a timer for 8 minutes
-- Stay quiet — do NOT look over their shoulders
-- Note if anyone finishes very early or seems to rush
+- Stay quiet — do not look over their shoulders
+
+**[SELF NOTE]** If someone finishes in under 4 minutes, note it — may indicate rushing. You can gently say "take a bit more time if you need it" without pressuring.
 
 **AFTER SURVEY:**
-> "Thank you. Now let's talk through the experience together."
+> "Thank you. Let's talk through the experience together now."
 
 ---
 
-## Phase 5: Group Discussion (0:58 – 1:18)
+## Phase 5: Group Discussion (1:01 – 1:19)
+
+**[SELF NOTE]** The post-survey already collected individual feature ratings and individual reflections. The discussion does NOT need to revisit those in depth. Keep the opening brief (2–3 min max) and spend the bulk of time on the Disney Method, which is where your most valuable redesign insights will come from.
 
 **SAY:**
-> "I'll ask some questions, but this is a conversation — jump in whenever. Honest, critical feedback is the most valuable thing you can give us today. Being nice doesn't help."
+> "The survey covered your individual impressions. Now I want to hear the group's perspective — and specifically, I want us to think about how to improve this platform. Honest, critical feedback is the most useful thing you can give us."
 
 ---
 
-### Step 1: Critical Moment Prompts (5 min)
+### Step 1: Quick Opening (2–3 min)
 
-**SAY:**
-> "I'm going to ask about specific moments. Think back and share the first thing that comes to mind."
+Ask only if something striking came up during coding that you want to surface quickly:
 
-Ask one at a time — wait for all three to respond before moving on:
+- > "Was there a moment during the session that really stood out — good or bad?"
+- > "Did the AI's task division feel fair? Did it match your skills?"
 
-1. > "Think of a moment when the tool **helped** you. What happened?"
-2. > "Think of a moment when you felt **confused or stuck**. What were you trying to do?"
-3. > "Was there a moment you **ignored** something the tool suggested? Why?"
-
-**Also probe if not already surfaced:**
-- > "Any friction with the Live Share setup — editing conflicts, connection issues?"
-- > "Did you use the team chat to talk to each other, or did you just speak out loud?"
-- > "Did anything feel slow or broken?"
+**[SELF NOTE]** Do not spend more than 3 minutes here. The post-survey covered feature ratings and reflections already. Move to the Disney activity as soon as you have a brief opening.
 
 ---
 
-### Step 2: Disney Method Redesign Activity (15 min)
+### Step 2: Disney Method Redesign Activity (15–17 min)
 
-> **This is the most important part of the session.** The goal is to leave with 3 concrete, participant-generated redesign priorities for the next version.
-
-**Before starting, assign roles** based on what you observed during coding:
-
-| Role | Assign to | Their job |
-|------|-----------|-----------|
-| **Dreamer** | Most vocal / enthusiastic participant | No limits — imagine the ideal |
-| **Realist** | Most pragmatic / execution-focused | What's actually buildable from that vision |
-| **Critic** | Most frustrated / skeptical | What would still fail |
+**[SELF NOTE]** This is the most important part of the session. You will leave with 3 participant-generated redesign priorities that become the "implications for design" section of your thesis. Do not rush or skip rounds.
 
 **INTRODUCE:**
-> "For the next part, I'm going to give each of you a specific thinking role. [Name], you're the Dreamer. [Name], you're the Realist. [Name], you're the Critic. I'll explain what each means as we go."
+> "For the next part, I'm giving each of you a specific thinking role. [Name], you're the Dreamer. [Name], you're the Realist. [Name], you're the Critic. I'll explain each role as we go."
 
 ---
 
-**Round 1 — Dreamer (2–3 min):**
+**Round 1 — Dreamer (3 min):**
 
 **SAY:**
-> "[Dreamer's name] — no technical constraints, no budget limits, no 'that's too hard.' If HelloCigen could do absolutely anything to make today's session work better, what would it do? Dream big."
+> "[Name] — no technical constraints, no budget, no 'that's not possible.' If CoGEN could do absolutely anything to make a session like today's work better, what would it do? Think big."
 
-*Let them speak fully. Don't cut them off. Note the ideas.*
+*Stay quiet and let them speak fully. Take notes — these ideas feed Round 4.*
 
-**If they're too conservative:**
-> "Forget what's technically possible for a second — what would the ideal version look like?"
+**If they stay conservative or say "I don't know":**
+> "Imagine you're pitching the ideal version of this tool to a team of engineers with unlimited time. What's the first thing you'd want?"
+
+**If they focus too much on bugs:**
+> "Set aside specific bugs for now — I want to hear about features and capabilities. What would make this fundamentally better?"
 
 ---
 
-**Round 2 — Realist (2–3 min):**
+**Round 2 — Realist (3 min):**
 
 **SAY:**
-> "[Realist's name] — you heard the Dreamer. What from that vision could actually be built? What's the one change that would have the biggest impact on the experience we had today?"
+> "[Name] — you heard the Dreamer. Of everything they described, what could actually be built? What's the one change that would have had the biggest positive impact on today's session specifically?"
 
-*Let them respond to the Dreamer's ideas specifically — this creates productive dialogue.*
+*Let them respond directly to the Dreamer's ideas. This creates dialogue between the roles.*
 
-**If they're stuck:**
-> "If you had to pick just one thing from what [Dreamer] said and make it real, what would it be?"
+**If they're stuck or repeat what the Dreamer said:**
+> "I'm asking you to filter — of all those ideas, which one is most feasible and most impactful? Pick one."
+
+**If they dismiss all of the Dreamer's ideas:**
+> "Fair — so what would you add instead? What's the most practical improvement you can think of?"
 
 ---
 
-**Round 3 — Critic (2–3 min):**
+**Round 3 — Critic (3 min):**
 
 **SAY:**
-> "[Critic's name] — even if we built exactly what the Realist suggested, what would still be broken? What problem doesn't get solved?"
+> "[Name] — even if we built exactly what the Realist described, what would still be broken? What problem would still not be solved?"
 
-*This is where the most important friction surfaces. The Critic often names the core issue.*
+*This round often surfaces the core tension. Give the Critic time — don't rush past this.*
 
-**If they're too agreeable:**
-> "Play devil's advocate — what's the biggest risk or flaw in this plan?"
+**If they agree with everything:**
+> "Play devil's advocate. What's the biggest risk of that change? What could go wrong?"
+
+**If they give a vague answer:**
+> "Can you give me a specific moment from today that wouldn't be fixed by what the Realist proposed?"
 
 ---
 
-**Round 4 — Open Group (5 min):**
+**Round 4 — Open Group (5–6 min):**
 
 **SAY:**
-> "Let's build on this together. If we were releasing the next version of HelloCigen next month, what are the **three most important changes** to make? Let's agree on a list."
+> "Let's bring this together. If we were releasing the next version of CoGEN next month, what are the **three most important changes** to make? Let's agree on a list."
 
-**Facilitate consensus — write the group's top 3 on paper, visible to everyone.**
+**[SELF NOTE]** Facilitate consensus — don't impose your own view. Write their exact phrasing on paper, visible to everyone. If they can't agree, use this prompt:
 
-**If they can't agree:**
-> "Which change would have had the most impact on today's experience — start there."
+> "Which change would have made the biggest difference specifically to today's session — start there."
 
-*These 3 items become your "implications for design" section in the thesis.*
+*Once the top 3 are written down:*
+> "Do all three of you agree these are the most important? Anyone want to swap one out?"
+
+**[SELF NOTE]** Write verbatim if possible — these quotes go directly into your thesis.
 
 ---
 
 ### Step 3: Closing (2 min)
 
 **SAY:**
-> "Last question: Would you use HelloCigen in a real team project? And if not — what would have to change first?"
+> "Last question: Would you use CoGEN in a real team project? And if not — what would have to change first?"
 
-*(Conditional framing — forces them to articulate the gap, not just say yes or no.)*
+*(Ask this conditionally — don't accept a simple yes or no. You want them to articulate the gap.)*
 
-> "Anything we didn't cover that you want to mention?"
+> "Anything else you want to say before we finish?"
 
 ---
 
-## Phase 6: Wrap-Up (1:18 – 1:22)
+## Phase 6: Wrap-Up (1:19 – 1:22)
 
 **SAY:**
-> "Thank you so much — this is genuinely helpful. Your feedback will directly shape the next version of this platform."
+> "Thank you — this is very helpful. Your feedback will directly shape the next version of this platform."
 
 **DO:**
-- Stop screen recording
-- Thank each participant individually
+- Stop all screen recordings
+- Thank each participant
 
-**AFTER EVERYONE LEAVES — do this immediately while fresh:**
-- Export post-survey responses
-- Write down your own observations: what surprised you, what broke, who seemed most frustrated, what the group agreed on
-- Export MongoDB logs: @AI message history, task events, chat timestamps
-- Debrief with your note-taker — compare what you each observed
+**IMMEDIATELY AFTER PARTICIPANTS LEAVE:**
+- Export post-survey responses from Google Forms
+- Write your own observations while fresh (what surprised you, what broke, the group's top 3 in their exact words)
+- Export MongoDB logs: @AI messages, task events, chat timestamps
+- Debrief with your note-taker — compare what you both observed before either of you writes anything up
 
 ---
 
-## Quick Reference: Timing
+## Quick Reference: Session Timeline
 
 | Phase | Activity | Time |
 |-------|----------|------|
-| 0 | Welcome + consent + pre-survey | 0:00 – 0:10 |
-| 1 | Setup + onboarding (Live Share + guest profiles) | 0:10 – 0:15 |
-| 2 | AI task division | 0:15 – 0:20 |
-| 3 | Coding session | 0:20 – 0:50 |
-| 4 | Post-survey (individual, silent) | 0:50 – 0:58 |
-| 5a | Critical moment prompts | 0:58 – 1:03 |
-| 5b | Disney Method — Dreamer | 1:03 – 1:06 |
-| 5c | Disney Method — Realist | 1:06 – 1:09 |
-| 5d | Disney Method — Critic | 1:09 – 1:12 |
-| 5e | Disney Method — Open group top 3 | 1:12 – 1:17 |
+| 0 | Welcome + consent | 0:00 – 0:05 |
+| 0b | Pre-survey | 0:05 – 0:10 |
+| 1 | System overview + Live Share setup + onboarding | 0:10 – 0:18 |
+| 2 | AI task division | 0:18 – 0:23 |
+| 3 | Coding session | 0:23 – 0:53 |
+| 4 | Post-survey (individual, silent) | 0:53 – 1:01 |
+| 5a | Quick opening | 1:01 – 1:04 |
+| 5b | Disney — Dreamer | 1:04 – 1:07 |
+| 5c | Disney — Realist | 1:07 – 1:10 |
+| 5d | Disney — Critic | 1:10 – 1:13 |
+| 5e | Disney — Open group top 3 | 1:13 – 1:19 |
 | 5f | Closing | 1:17 – 1:19 |
 | 6 | Wrap-up | 1:19 – 1:22 |
 
@@ -278,11 +286,12 @@ Ask one at a time — wait for all three to respond before moving on:
 
 ## Facilitation Tips
 
-| Situation | What to say |
-|-----------|-------------|
-| One person dominates | "That's great — [other name], what was your take on that?" |
-| Answers are vague | "Can you give me a specific moment when that happened?" |
-| They're too polite | "Negative feedback helps us more than positive right now — be critical." |
-| They go off-topic | "Interesting — let's come back to that. Going back to [topic]..." |
-| Disney roles feel theatrical | Skip the role names — just say "I want each of you to think from a different angle" |
+| Situation | Response |
+|-----------|----------|
+| One person dominates | "That's useful — [other name], what was your experience with that?" |
+| Answers are vague | "Can you give me a specific moment from today when that happened?" |
+| Participants are too positive | "We're more interested in what didn't work — that's the most useful feedback." |
+| They go off-topic | "Good point — let's come back to that. Returning to [topic]..." |
+| Disney roles feel awkward | Drop the role names — say "I want each of you to think from a different angle" |
 | Running over time | Cut the Critic round — Dreamer + Realist + Open Group are the minimum |
+| Participants can't agree on top 3 | "Which change would have mattered most to today's session specifically?" |
