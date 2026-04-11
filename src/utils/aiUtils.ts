@@ -3,6 +3,8 @@ import { OpenAI } from 'openai';
 export interface AiDivision {
   id: string;
   title: string;
+  rationale?: string;
+  files?: string[];
   tasks: Array<{
     id: string;
     title: string;
@@ -41,16 +43,21 @@ export async function generateDivisionOfWork(
 
 Divide this project into EXACTLY ${participantCount} independent, parallel-developable divisions, one per developer. Each division must:
 - Be self-contained with minimal cross-dependencies
-- Include specific files/modules to own
+- Own a concrete list of 3-8 files
 - Define clear interfaces/APIs for integration
 - Cover frontend/backend/testing/deployment aspects balanced
 - Have 2-4 concrete tasks
+- Include a 1-2 sentence rationale explaining why these files and tasks form a coherent ownership boundary
+
+File naming rule: Use only the file name (e.g. "server.ts", "chatPanel.ts"), NOT a full path. Only prefix the parent folder when two divisions would otherwise share the same file name (e.g. "ui/chat.ts" vs "server/chat.ts").
 
 Output ONLY a valid JSON array (no markdown, no extra text). Example format:
 [
   {
     "id": "d1",
     "title": "Division Name",
+    "rationale": "Short 1-2 sentence explanation of why these files and tasks belong together.",
+    "files": ["server.ts", "db.ts", "server.test.ts"],
     "tasks": [
       {"id": "t1", "title": "Task description", "status": "todo"},
       {"id": "t2", "title": "Another task", "status": "todo"}

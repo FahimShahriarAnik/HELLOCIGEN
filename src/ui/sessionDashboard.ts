@@ -452,6 +452,15 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
       const tasksHtml = (div.tasks || []).map((t: any) =>
         `<li>${this.escapeHtml(t.title)}</li>`
       ).join('');
+      const filesHtml = ((div.files as string[]) || []).map((f: string) =>
+        `<li class="file-item">${this.escapeHtml(f)}</li>`
+      ).join('');
+      const rationaleHtml = div.rationale
+        ? `<p class="rationale">${this.escapeHtml(div.rationale)}</p>`
+        : '';
+      const filesBlock = filesHtml
+        ? `<div class="section-label">Files</div><ul class="file-list">${filesHtml}</ul>`
+        : '';
       return `
         <div class="div-card">
           <div class="div-card-header">
@@ -461,7 +470,10 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
               <span class="owner-badge">${this.escapeHtml(ownerName)}</span>
             </div>
           </div>
+          ${rationaleHtml}
+          <div class="section-label">Tasks</div>
           <ul class="task-list">${tasksHtml}</ul>
+          ${filesBlock}
         </div>`;
     }).join('');
 
@@ -543,10 +555,26 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
     .div-info { flex: 1; min-width: 0; }
     .div-title { font-size: 12px; font-weight: 700; display: block; margin-bottom: 2px; }
     .owner-badge { font-size: 10px; opacity: 0.6; }
+    .rationale {
+      font-size: 11px;
+      opacity: 0.75;
+      line-height: 1.5;
+      padding: 8px 0 6px 0;
+      margin-top: 8px;
+      border-top: 1px solid var(--vscode-panel-border);
+      font-style: italic;
+    }
+    .section-label {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.55;
+      margin: 8px 0 3px 0;
+    }
     .task-list {
       list-style: none;
-      border-top: 1px solid var(--vscode-panel-border);
-      padding-top: 8px;
+      padding: 0;
     }
     .task-list li {
       font-size: 11px;
@@ -557,6 +585,24 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
     }
     .task-list li::before {
       content: '\\00B7';
+      position: absolute;
+      left: 3px;
+      opacity: 0.5;
+    }
+    .file-list {
+      list-style: none;
+      padding: 0;
+    }
+    .file-list .file-item {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 10px;
+      opacity: 0.85;
+      padding: 2px 0 2px 12px;
+      position: relative;
+      line-height: 1.4;
+    }
+    .file-list .file-item::before {
+      content: '\\203A';
       position: absolute;
       left: 3px;
       opacity: 0.5;

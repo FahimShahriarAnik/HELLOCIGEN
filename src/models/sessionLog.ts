@@ -37,6 +37,8 @@ export type SessionStatus = "draft" | "dividing" | "active" | "completed";
 export interface Division {
   id: string;
   title: string;        // module / chunk name
+  rationale?: string;   // AI-generated explanation of ownership boundary
+  files?: string[];     // file names owned by this division (base names; folder prefix only if needed to disambiguate)
   owner_id: string;     // participant id reference
   tasks: Task[];
 }

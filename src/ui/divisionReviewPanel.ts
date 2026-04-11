@@ -317,10 +317,26 @@ export class DivisionReviewPanel {
       cursor: pointer;
     }
     .owner-select:focus { outline: 1px solid var(--vscode-focusBorder); }
+    .rationale {
+      font-size: 12px;
+      opacity: 0.75;
+      line-height: 1.55;
+      padding: 10px 0 8px 0;
+      border-top: 1px solid var(--vscode-panel-border);
+      margin-top: 10px;
+      font-style: italic;
+    }
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      opacity: 0.55;
+      margin: 10px 0 4px 0;
+    }
     .task-list {
       list-style: none;
-      border-top: 1px solid var(--vscode-panel-border);
-      padding-top: 10px;
+      padding: 0;
     }
     .task-list li {
       font-size: 12px;
@@ -331,6 +347,25 @@ export class DivisionReviewPanel {
     }
     .task-list li::before {
       content: '·';
+      position: absolute;
+      left: 4px;
+      opacity: 0.5;
+    }
+    .files-block { margin-top: 6px; }
+    .file-list {
+      list-style: none;
+      padding: 0;
+    }
+    .file-list .file-item {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 11px;
+      opacity: 0.85;
+      padding: 2px 0 2px 14px;
+      position: relative;
+      line-height: 1.5;
+    }
+    .file-list .file-item::before {
+      content: '\\203A';
       position: absolute;
       left: 4px;
       opacity: 0.5;
@@ -431,26 +466,40 @@ export class DivisionReviewPanel {
       }
     });
 
+    function escapeHtml(text) {
+      return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
     function renderReview() {
       document.getElementById('divCount').textContent = currentDivisions.length;
       const container = document.getElementById('divisionCards');
       container.innerHTML = currentDivisions.map((div, i) => {
         const options = currentParticipants.map(p =>
-          '<option value="' + p.id + '"' + (p.id === div.owner_id ? ' selected' : '') + '>' + p.name + '</option>'
+          '<option value="' + p.id + '"' + (p.id === div.owner_id ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>'
         ).join('');
-        const tasks = div.tasks.map(t => '<li>' + t.title + '</li>').join('');
+        const tasks = (div.tasks || []).map(t => '<li>' + escapeHtml(t.title) + '</li>').join('');
+        const files = (div.files || []).map(f => '<li class="file-item">' + escapeHtml(f) + '</li>').join('');
+        const rationaleHtml = div.rationale
+          ? '<p class="rationale">' + escapeHtml(div.rationale) + '</p>'
+          : '';
+        const filesBlock = files
+          ? '<div class="files-block"><div class="section-label">Files</div><ul class="file-list">' + files + '</ul></div>'
+          : '';
         return '<div class="div-card">'
           + '<div class="div-card-header">'
           + '<span class="div-index">' + String(i + 1).padStart(2, '0') + '</span>'
           + '<div class="div-info">'
-          + '<span class="div-title">' + div.title + '</span>'
+          + '<span class="div-title">' + escapeHtml(div.title) + '</span>'
           + '<div class="owner-row">'
           + '<span class="owner-label">Assigned to:</span>'
           + '<select class="owner-select" data-division-id="' + div.id + '">' + options + '</select>'
           + '</div>'
           + '</div>'
           + '</div>'
+          + rationaleHtml
+          + '<div class="section-label">Tasks</div>'
           + '<ul class="task-list">' + tasks + '</ul>'
+          + filesBlock
           + '</div>';
       }).join('');
     }
