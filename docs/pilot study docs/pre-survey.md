@@ -83,8 +83,8 @@ Options: Yes / No / Not sure
 **Q12. I feel comfortable when an AI makes decisions about how work should be divided.**
 *Type: Linear scale 1–5*
 
-> **Rationale:** Adapted from Jian, J. Y., Bisantz, A. M., & Drury, C. G. (2000). *Foundations for an empirically determined scale of trust in automated systems.* International Journal of Cognitive Ergonomics, 4(1), 53–71. These exact 3 items reappear in the post-survey. At n=3, no statistical comparison — but a per-participant pre→post table is meaningful and legitimate.
-> **Analysis:** Create a 3×3 table (P1/P2/P3 × Q10/Q11/Q12) with pre scores. Compare to post-survey scores per participant. Describe direction qualitatively.
+> **Rationale:** Adapted from Jian et al. (2000). These items measure *dispositional* trust in AI — a general attitude the participant holds before any experience with CoGEN. This is intentionally different from the post-survey Section 2 (TXAI items), which measures *situational* trust in CoGEN specifically after use. These are distinct constructs and should not be compared item-for-item; instead, use these pre-scores as a baseline covariate when interpreting post-survey trust scores.
+> **Analysis:** Report as a per-participant baseline profile (P1/P2/P3 × Q10/Q11/Q12). Reference these scores when interpreting post-survey TXAI results — e.g. "P2 entered with low dispositional AI trust (2/5 on Q12) but rated post-session TXAI items moderately, suggesting CoGEN partially overcame initial skepticism."
 
 ---
 
@@ -105,6 +105,6 @@ Options: Yes / No / Not sure
 
 ## Unanswered Questions (Decide with Prof)
 
-- **Jian et al. scale scope:** The full scale has 12 items. We're using 3 adapted items. In the thesis, frame as "adapted from Jian et al." not "we used the Jian et al. scale." Confirm with prof whether this framing is acceptable or if they prefer custom wording.
+- **Jian et al. scale scope:** Q10–Q12 are 3 adapted items used as a dispositional baseline only — not matched item-for-item to the post-survey. In the thesis, frame as "adapted from Jian et al. (2000) to measure baseline dispositional trust in AI." The post-survey uses a separate instrument (TXAI, Hoffman et al., 2023) for system-specific trust.
 - **Section 3 inclusion:** If the prof feels collaboration preference items are unnecessary for a pilot, drop Q8–Q9. They add ~30 sec and provide only interpretive (not analytical) value.
 - **Timing:** If sending the form in advance (day before), note that expectations may be more considered than candid. If sent on the spot (first 5 min), expectations are more genuine but rushed.

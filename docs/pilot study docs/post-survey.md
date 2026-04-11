@@ -1,5 +1,5 @@
 # Post-Survey — CoGEN Pilot Study
-**For Google Forms setup | 30 questions | ~8–10 min**
+**For Google Forms setup | 35 questions | ~8–10 min**
 
 Distribute immediately after coding ends. Participants fill it out individually and silently BEFORE the group discussion starts. This prevents anchoring bias in individual reflection.
 
@@ -41,17 +41,20 @@ Distribute immediately after coding ends. Participants fill it out individually 
 
 ## Section 2: Trust in AI
 
-*"After today's session, how much do you agree with the following?"*
+*"After today's session, how much do you agree with the following statements about the AI?"*
 *Scale: 1=Strongly Disagree → 5=Strongly Agree*
 
-**Q11.** I believe AI systems can provide reliable guidance when I am unsure what to do.
-**Q12.** I was willing to follow the task assignments made by the AI.
-**Q13.** I felt comfortable when the AI made decisions about how work should be divided.
+**Q11.** I am confident in the AI. I feel that it works well.
+**Q12.** The outputs of the AI are very predictable.
+**Q13.** The AI is very reliable. I can count on it to be correct.
+**Q14.** I feel safe that when I rely on the AI, I will get the right answers.
+**Q15.** The AI is efficient and responds quickly.
+**Q16.** I am wary of the AI. *(reverse-coded — flip score before analysis)*
+**Q17.** The AI can divide tasks among team members better than a novice human would.
+**Q18.** I like using the AI for making decisions about how work should be divided.
 
-*These are the same 3 items from the pre-survey — do not change wording.*
-
-> **Rationale:** Adapted from Jian et al. (2000). Matched to pre-survey Q10–Q12 for pre→post comparison. At n=3, report as a per-participant table showing direction of change — not statistics. E.g. "P1 went from 2→4 on Q12, P2 from 3→2." One changed score with a supporting discussion quote is a meaningful finding.
-> **Analysis:** Build a 3×3 comparison table (P1/P2/P3 × Q11/Q12/Q13, pre vs post). Describe direction per participant. Cross-reference with discussion quotes where trust came up.
+> **Rationale:** Adapted from Hoffman et al. (2023) Trust Scale for the XAI Context (TXAI), published in *Frontiers in Computer Science* (DOI: 10.3389/fcomp.2023.1096257). Measures situational trust in CoGEN specifically — distinct from the dispositional AI trust baseline captured in pre-survey Q10–Q12. [tool] replaced with "the AI" throughout; Item 7 reworded to fit collaborative task division; Item 8 reworded to fit work division decision-making. Item 6 (Q16) is reverse-coded.
+> **Analysis:** Report as a per-participant table (P1/P2/P3 × Q11–Q18). Flip Q16 score before computing mean (reverse-coded: new score = 6 − response on 5-point scale). Use pre-survey Q10–Q12 as a dispositional baseline covariate — e.g. "P1 entered with high general AI trust (4/5 avg pre-survey), and this was reflected in their post-session TXAI scores." Cross-reference with discussion quotes where trust came up.
 
 ---
 
@@ -65,42 +68,42 @@ Each feature has a rating followed immediately by a required open-ended explanat
 
 ---
 
-**Q14. Onboarding — How smooth was the process of joining the session?**
+**Q19. Onboarding — How smooth was the process of joining the session?**
 *Type: Linear scale 1–5*
 
-**Q15. What caused friction, or what made it smooth?**
+**Q20. What caused friction, or what made it smooth?**
 *Type: Paragraph (required)*
 
 ---
 
-**Q16. AI Task Division — How well did the AI break down the project into tasks?**
+**Q21. AI Task Division — How well did the AI break down the project into tasks?**
 *Type: Linear scale 1–5*
 
-**Q17. What would have made the task breakdown better? Did the tasks match your skills and strengths?**
+**Q22. What would have made the task breakdown better? Did the tasks match your skills and strengths?**
 *Type: Paragraph (required)*
 
 ---
 
-**Q18. Task Tracker — How useful was the task tracker sidebar?**
+**Q23. Task Tracker — How useful was the task tracker sidebar?**
 *Type: Linear scale 1–5*
 
-**Q19. When did you check it during the session, and when did you ignore it?**
+**Q24. When did you check it during the session, and when did you ignore it?**
 *Type: Paragraph (required)*
 
 ---
 
-**Q20. @AI Chat — How actionable were @AI's responses in the chat?**
+**Q25. @AI Chat — How actionable were @AI's responses in the chat?**
 *Type: Linear scale 1–5*
 
-**Q21. Describe a specific moment when @AI helped you — or failed to help.**
+**Q26. Describe a specific moment when @AI helped you — or failed to help.**
 *Type: Paragraph (required)*
 
 ---
 
-**Q22. Collaboration Awareness — How aware were you of what your teammates were working on?**
+**Q27. Collaboration Awareness — How aware were you of what your teammates were working on?**
 *Type: Linear scale 1–5*
 
-**Q23. How did you actually find out what others were doing? (e.g. asked verbally, checked task tracker, guessed)**
+**Q28. How did you actually find out what others were doing? (e.g. asked verbally, checked task tracker, guessed)**
 *Type: Paragraph (required)*
 
 ---
@@ -112,7 +115,7 @@ Each feature has a rating followed immediately by a required open-ended explanat
 
 ## Section 4: AI as Project Manager
 
-**Q24. Did CoGEN feel more like a project manager or a chatbot?**
+**Q29. Did CoGEN feel more like a project manager or a chatbot?**
 *Type: Multiple choice (single select)*
 Options:
 - Definitely a chatbot
@@ -121,19 +124,19 @@ Options:
 - More project manager than chatbot
 - Definitely a project manager
 
-**Q25. What was missing for it to feel more like a real project manager?**
+**Q30. What was missing for it to feel more like a real project manager?**
 *Type: Paragraph (required)*
 
-**Q26. How did your actual experience compare to what you expected before the session?**
+**Q31. How did your actual experience compare to what you expected before the session?**
 *Type: Paragraph (required)*
 *[This mirrors pre-survey Q13 — read both together during analysis]*
 
-**Q27. How did your expectations about AI task division compare to the reality of today's session?**
+**Q32. How did your expectations about AI task division compare to the reality of today's session?**
 *Type: Paragraph (required)*
 *[This mirrors pre-survey Q14 — read both together during analysis]*
 
-> **Rationale:** Q24 is a directional signal — frequency count of 3 responses. Q25 generates specific feature ideas for the next iteration. Q26–Q27 are the expectation gap analysis, the most analytically rich part of the instrument. Read pre Q13+Q14 alongside post Q26+Q27 per participant.
-> **Analysis:** Q24 → report as "X of 3 participants placed it closer to chatbot." Q25 → thematic coding for redesign. Q26+Q27 → per-participant narrative comparing pre answers to post answers.
+> **Rationale:** Q29 is a directional signal — frequency count of 3 responses. Q30 generates specific feature ideas for the next iteration. Q31–Q32 are the expectation gap analysis, the most analytically rich part of the instrument. Read pre Q13+Q14 alongside post Q31+Q32 per participant.
+> **Analysis:** Q29 → report as "X of 3 participants placed it closer to chatbot." Q30 → thematic coding for redesign. Q31+Q32 → per-participant narrative comparing pre answers to post answers.
 
 ---
 
@@ -141,22 +144,23 @@ Options:
 
 *Answered individually before group discussion starts — prevents anchoring bias.*
 
-**Q28. What was the single most frustrating moment during the session?**
+**Q33. What was the single most frustrating moment during the session?**
 *Type: Paragraph (required)*
 
-**Q29. What was the single most helpful thing CoGEN did?**
+**Q34. What was the single most helpful thing CoGEN did?**
 *Type: Paragraph (required)*
 
-**Q30. Was there a moment you wanted help from the tool but didn't get it? Describe it.**
+**Q35. Was there a moment you wanted help from the tool but didn't get it? Describe it.**
 *Type: Paragraph (required)*
 
 > **Rationale:** Collecting these individually (before discussion) prevents anchoring bias — participants won't anchor to the most vocal person's frustrations. "Single most" framing forces prioritisation instead of listing everything.
-> **Analysis:** Q28 responses → pain point ranking for redesign. Q29 → design strengths to preserve. Q30 → unmet needs analysis. These feed directly into the "implications for design" section.
+> **Analysis:** Q33 responses → pain point ranking for redesign. Q34 → design strengths to preserve. Q35 → unmet needs analysis. These feed directly into the "implications for design" section.
 
 ---
 
 ## Unanswered Questions (Decide with Prof)
 
-- **SUS in pilot or final study only?** Prof's call — see rationale in Section 1 above. If dropped, the form is ~20 questions, ~5 min.
-- **Q24 wording:** "Project manager vs chatbot" framing may prime the answer. Alternative: "How would you describe the role @AI played?" (open-ended). More neutral but harder to compare across participants.
+- **SUS in pilot or final study only?** Prof's call — see rationale in Section 1 above. If dropped, the form is ~25 questions, ~5–6 min.
+- **Q29 wording:** "Project manager vs chatbot" framing may prime the answer. Alternative: "How would you describe the role @AI played?" (open-ended). More neutral but harder to compare across participants.
 - **Qualitative coding workload:** 12 required open-ended responses × 3 participants = 36 qualitative data points. Solo coding is feasible (2–4 hours with affinity mapping). With a second coder, inter-rater reliability check significantly strengthens thesis validity.
+- **Q15 (efficiency):** Consider dropping this item if CoGEN's response speed is not a research focus. It is the weakest fit for a trust-in-task-assignment study and reduces the scale to 7 items with no loss to validity.
