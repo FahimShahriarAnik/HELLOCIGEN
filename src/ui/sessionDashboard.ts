@@ -736,7 +736,6 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
     .summary-content {
       font-size: 12px;
       line-height: 1.7;
-      white-space: pre-wrap;
       word-break: break-word;
     }
     .summary-content h1, .summary-content h2, .summary-content h3 {
@@ -749,6 +748,21 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
       margin: 4px 0;
     }
     .summary-content strong { font-weight: 700; }
+    .summary-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+      font-size: 11px;
+    }
+    .summary-content th, .summary-content td {
+      border: 1px solid var(--vscode-panel-border, #444);
+      padding: 4px 8px;
+      text-align: left;
+    }
+    .summary-content th {
+      background: var(--vscode-editor-lineHighlightBackground, #2a2a2a);
+      font-weight: 700;
+    }
     button.full {
       width: 100%;
       margin-top: 10px;
@@ -803,9 +817,30 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
   }
 
   private markdownToHtml(md: string): string {
-    // Minimal markdown-to-HTML for summary display
-    return md
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Escape HTML first
+    let escaped = md
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Convert markdown tables (must run before line-by-line replacements)
+    escaped = escaped.replace(
+      /((?:^[^\n]*\|[^\n]*\n)+)/gm,
+      (block) => {
+        const lines = block.trimEnd().split('\n').filter(l => l.trim());
+        // Filter out separator lines (e.g. |---|---|)
+        const dataLines = lines.filter(l => !/^\s*\|?[-| :]+\|?\s*$/.test(l));
+        if (dataLines.length < 1) return block;
+        let html = '<table>';
+        dataLines.forEach((line, i) => {
+          const cells = line.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1 || arr.length === 1);
+          const tag = i === 0 ? 'th' : 'td';
+          html += '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+        });
+        html += '</table>';
+        return html;
+      }
+    );
+
+    return escaped
       .replace(/^### (.+)$/gm, '<h3>$1</h3>')
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')
       .replace(/^# (.+)$/gm, '<h1>$1</h1>')
