@@ -737,6 +737,6 @@ app.get('/sessions/:session_id/summary', async (req: Request, res: Response) => 
 });
 
 const port = process.env.PORT ?? 4000;
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
+app.listen(port, '127.0.0.1', () => {
+  console.log(`Server listening on http://127.0.0.1:${port}`);
 });

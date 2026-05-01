@@ -26,10 +26,7 @@ export class ServerManager {
 
     this.intentionallyStopped = false;
     output.appendLine("Starting MongoDB server...");
-    const serverPath = path.join(
-      __dirname.replace("/out", ""),
-      "out/server/server.js"
-    );
+    const serverPath = path.join(__dirname, "server", "server.js");
 
     serverProcess = child_process.fork(serverPath, [], { silent: true });
 

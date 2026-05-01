@@ -899,8 +899,11 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
 
       try {
         await liveShare.shareServer({ port: 4000, displayName: 'CoGEN Server' });
-      } catch {
-        vscode.window.showWarningMessage("Failed to share server port. Guests may not be able to connect.");
+      } catch (err) {
+        this.postStartStatus(false, "Failed to share server port — session aborted.");
+        vscode.window.showErrorMessage(`CoGEN could not share the server port with guests. Session aborted. (${err})`);
+        serverManager.stopServer();
+        return;
       }
       const projectConfig = await serverManager.httpFetch("/project_details");
       const projects = projectConfig?.projects ?? [];
