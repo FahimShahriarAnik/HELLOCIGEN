@@ -31,6 +31,7 @@ interface SessionState {
   division_of_work?: Division[];
   participants?: Array<{ id: string; name: string }>;
   project_title?: string;
+  project_details?: { title: string; description?: string; complexity?: string };
   session_name?: string;
 }
 const sessionStates = new Map<string, SessionState>();
@@ -216,6 +217,7 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
         division_of_work: update.division_of_work as Division[],
         participants,
         project_title: latest[0].project_title,
+        project_details: latest[0].project_details,
         session_name: latest[0].session_name
       });
     }
