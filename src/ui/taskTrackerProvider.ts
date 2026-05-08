@@ -10,6 +10,7 @@ interface TrackedTask {
   id: string;
   title: string;
   status: Status;
+  files?: string[];
   subtasks?: TrackedTask[];
 }
 
@@ -92,6 +93,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
         id: t.id,
         title: t.title,
         status: (t.status as Status) ?? 'todo',
+        files: t.files,
         subtasks: t.subtasks?.map(s => ({
           id: s.id,
           title: s.title,
@@ -288,11 +290,14 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
                     <span class="label">${sub.title}</span>
                   </div>`).join('')
               : '';
+            const taskFilesHtml = (task.files && task.files.length > 0)
+              ? `<div class="task-files">${task.files.map(f => `<span class="task-file">${f}</span>`).join('')}</div>`
+              : '';
             return `
               <div class="row task" data-div="${div.id}" data-task="${task.id}">
                 ${this._statusIcon(task.status)}
                 <span class="label">${task.title}</span>
-              </div>${subsHtml}`;
+              </div>${taskFilesHtml}${subsHtml}`;
           }).join('');
 
           const ownerName = this._participants.find(p => p.id === div.owner_id)?.name ?? div.owner_id;
@@ -391,6 +396,8 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
     }
     .owner-select:focus { outline: 1px solid var(--vscode-focusBorder); }
     .owner-badge { font-size: 10px; opacity: 0.6; padding: 1px 4px; }
+    .task-files { padding: 1px 10px 3px 40px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .task-file { font-size: 10px; font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-radius: 3px; padding: 1px 5px; opacity: 0.85; }
   </style>
 </head>
 <body>

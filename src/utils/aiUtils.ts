@@ -9,6 +9,7 @@ export interface AiDivision {
     id: string;
     title: string;
     status: 'todo' | 'doing' | 'done';
+    files?: string[];
     subtasks?: Array<{ id: string; title: string; status: 'todo' | 'doing' | 'done' }>;
   }>;
 }
@@ -45,13 +46,13 @@ Divide this project into EXACTLY ${participantCount} independent, parallel-devel
 - Be self-contained so each developer can work and test their piece independently without waiting on others
 - Own a concrete list of 1-4 files appropriate to the project size and structure
 - Define clear interfaces (function signatures, return types) for any points where divisions interact
-- Have 2-4 concrete tasks with 2-4 subtasks each
+- Have 2-4 concrete tasks with 2-4 subtasks each, where each task includes the specific files or modules the developer should work in (inferred from the project structure)
 - Include a 1-2 sentence rationale explaining why these files and tasks form a coherent ownership boundary
 - Be scoped to the project's actual structure — do not invent layers (frontend/backend/deployment) that are not described in the project
 
 If participant profiles are provided, actively match each division to the participant whose strengths best fit that division's requirements. Prioritize pairing divisions with the participants strength and weaknesses as described by them during onboarding.
 
-File naming rule: Use only the file name (e.g. "engine.py"), NOT a full path. Only prefix the parent folder when two divisions would otherwise share the same file name.
+File naming rule: Use relative paths from the project root (e.g. "src/engine.py"). Only use the bare file name when the project structure provides no path context.
 
 Output ONLY a valid JSON array (no markdown, no extra text). Example format:
 [
@@ -59,12 +60,13 @@ Output ONLY a valid JSON array (no markdown, no extra text). Example format:
     "id": "d1",
     "title": "Division Name",
     "rationale": "Short 1-2 sentence explanation of why these files and tasks belong together.",
-    "files": ["engine.py"],
+    "files": ["src/engine.py"],
     "tasks": [
       {
         "id": "t1",
         "title": "Task description",
         "status": "todo",
+        "files": ["src/engine.py", "src/utils/helpers.py"],
         "subtasks": [
           {"id": "s1", "title": "Subtask description", "status": "todo"}
         ]

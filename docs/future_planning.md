@@ -863,6 +863,44 @@ Division-level toggle emits one notification for the whole division (using `div.
 
 ---
 
+## Phase 14: Per-Task File Path Recommendations ✅ COMPLETED
+
+**Branch:** `action-items`
+**Issues addressed:** AI-generated task descriptions gave no guidance on which files to work in. Developers had to infer file ownership from the division-level `files` list.
+**Status:** Implemented and compiled.
+
+### 14.1 — `AiDivision` Task Type Extended ✅
+
+- Added `files?: string[]` to the task type inside `AiDivision` in `src/utils/aiUtils.ts`
+- Field is optional — existing sessions without per-task files continue to work
+
+### 14.2 — Prompt Updated ✅
+
+- Task generation prompt in `generateDivisionOfWork()` now instructs AI to include specific files/modules per task, inferred from the project structure shared at session setup
+- File naming rule updated from "filename only" to relative path from project root (e.g. `src/engine.py`); bare filename only when project structure provides no path context
+- Example JSON in the prompt now shows `"files"` at the task level alongside the division-level `"files"`
+
+### 14.3 — Task Tracker Wired Through ✅
+
+- `TrackedTask` interface in `src/ui/taskTrackerProvider.ts` extended with `files?: string[]`
+- `setDivisions()` passes `t.files` through when mapping `AiDivision` → `TrackedTask`
+- Per-task file data also flows naturally through `_fetchDivisions()` (server JSON deserialized as `TrackedDivision`, which now carries `files`)
+
+### 14.4 — File Badges Rendered in Task Tracker ✅
+
+- `_getHtml()` renders a `<div class="task-files">` row of `<span class="task-file">` badges immediately below each task row (above subtasks)
+- Badge row only rendered when `task.files` is non-empty — zero change to tasks without file data
+- Styled using VS Code badge theme tokens (`--vscode-badge-background`, `--vscode-badge-foreground`) with monospace font and 3px border radius
+
+### 14.5 — Verification
+
+- [ ] Start a session → AI generates divisions → task tracker shows file badges below task titles
+- [ ] Tasks with no `files` field → no badge row, no crash
+- [ ] File paths use relative format (e.g. `src/server/server.ts`) matching project structure
+- [ ] Build VSIX: `npx vsce package`
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
@@ -892,3 +930,4 @@ Division-level toggle emits one notification for the whole division (using `div.
 - **Phase 11 is complete** — single chat panel with recipient dropdown (Team / AI · Private / DM by name), per-participant SSE routing, private AI queries visible only to sender, DM routing between two participants, five distinct message styles (broadcast-mine, broadcast-theirs, AI, dm-sent, dm-received), and filtered history load/poll per viewer. `sseClients` is now `Map<session_id, Map<participantName, Set<Response>>>`. Legacy messages without `recipient` default to `'broadcast'`.
 - **Phase 12 is complete** — trigger-based AI code review fires on task/division completion. Uses VS Code's built-in `vscode.git` API for changed files (no shell commands). Review is fire-and-forget — shown as a VS Code info message, never blocks task toggling. Subtask-triggered parent completion guarded by `prevStatus !== 'done'` to prevent double-fire.
 - **Phase 13 is complete** — task completion broadcasts a `System` chat message (`"P1 completed: Task Title"`) to all participants via SSE immediately. If API key is set, CoGEN queues a brief (≤15-word) acknowledgment via `enqueueAiGeneration`. Uses same three trigger sites as Phase 12 code review. Participant label (`P1`/`P2`) resolved from `_participants` array index; falls back to raw `owner_id` if list is empty.
+- **Phase 14 is complete** — AI-generated tasks now include `files?: string[]` per task (inferred from project structure). Prompt updated to request relative paths (e.g. `src/engine.py`) and include file context in task descriptions. `TrackedTask` interface extended with `files`; `setDivisions()` passes them through; task tracker renders file badges below each task row.
