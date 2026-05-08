@@ -7,6 +7,8 @@ import { Role } from "./utils/liveshareHelpers";
 import { SessionDashboard } from "./ui/sessionDashboard";
 import { TaskTrackerProvider } from "./ui/taskTrackerProvider";
 import { GuestOnboardingView } from "./ui/guestOnboardingView";
+import { FilePresenceDecorator } from "./ui/filePresenceDecorator";
+import { initPresenceManager } from "./utils/presenceManager";
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel("HELLOCIGEN");
@@ -30,6 +32,9 @@ export function activate(context: vscode.ExtensionContext) {
   const taskTrackerProvider = new TaskTrackerProvider();
   TaskTrackerProvider.instance = taskTrackerProvider;
 
+  const decorator = new FilePresenceDecorator();
+  FilePresenceDecorator.instance = decorator;
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       SessionDashboard.viewId,
@@ -38,12 +43,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(
       TaskTrackerProvider.viewId,
       taskTrackerProvider
-    )
+    ),
+    vscode.window.registerFileDecorationProvider(decorator)
   );
 
   // Auto-detect when this instance joins a Live Share session as a guest.
   vsls.getApi().then(liveShare => {
     if (!liveShare) return;
+
+    let presenceInitializedForSession: string | undefined;
 
     const tryShowOnboarding = () => {
       const session = liveShare.session;
@@ -53,6 +61,14 @@ export function activate(context: vscode.ExtensionContext) {
         const sessionId = session.id;
         if (sessionId) {
           initialSessionProvider.setActiveSession(sessionId, false);
+        }
+        // Wire up file presence for guest (once per session)
+        if (sessionId && presenceInitializedForSession !== sessionId && decorator) {
+          presenceInitializedForSession = sessionId;
+          const myName = session.user?.displayName ?? 'Guest';
+          initPresenceManager(liveShare, myName, decorator, context).then(d => {
+            context.subscriptions.push(d);
+          });
         }
       }
     };
@@ -68,6 +84,11 @@ export function activate(context: vscode.ExtensionContext) {
       const s = liveShare.session;
       if ((!s || s.role === Role.None) && initialSessionProvider.activeSessionId && initialSessionProvider.isHost) {
         initialSessionProvider.endSession();
+      }
+      // Clear presence when session ends
+      if (!s || s.role === Role.None) {
+        decorator?.clearAll();
+        presenceInitializedForSession = undefined;
       }
     });
   });
@@ -119,6 +140,14 @@ export function activate(context: vscode.ExtensionContext) {
       }
       // Start or attach to Live Share session
       await liveShare.share();
+
+      // Wire up file presence for host
+      if (decorator) {
+        const myName = liveShare.session?.user?.displayName ?? 'Host';
+        initPresenceManager(liveShare, myName, decorator, context).then(d => {
+          context.subscriptions.push(d);
+        });
+      }
 
       /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
       let projectDetails: any;
