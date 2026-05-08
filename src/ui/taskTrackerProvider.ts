@@ -154,6 +154,37 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async _getChangedFiles(): Promise<string[]> {
+    const gitExt = vscode.extensions.getExtension('vscode.git');
+    if (!gitExt?.isActive) return [];
+    const api = gitExt.exports.getAPI(1);
+    const repo = api?.repositories?.[0];
+    if (!repo) return [];
+    const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const changes = [...(repo.state.workingTreeChanges ?? []), ...(repo.state.indexChanges ?? [])];
+    return [...new Set(changes.map((c: any) => {
+      const full: string = c.uri.fsPath;
+      return workspace ? full.replace(workspace + '/', '') : (full.split('/').pop() ?? full);
+    }))];
+  }
+
+  private async _triggerCodeReview(taskTitle: string, divisionTitle: string): Promise<void> {
+    if (!this._sessionId) return;
+    const changedFiles = await this._getChangedFiles();
+    try {
+      const resp = await fetch(`${SERVER_URL}/sessions/${this._sessionId}/code-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_title: taskTitle, division_title: divisionTitle, changed_files: changedFiles })
+      });
+      if (!resp.ok) return;
+      const data = await resp.json() as { assessment: string };
+      vscode.window.showInformationMessage(`Code Review: ${data.assessment}`);
+    } catch {
+      // Non-critical
+    }
+  }
+
   private async _persistDivisions(): Promise<void> {
     if (!this._sessionId) return;
     this._skipNextPoll = true;
@@ -176,16 +207,21 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       const task = div.tasks.find(t => t.id === taskId);
       const sub = task?.subtasks?.find(s => s.id === subtaskId);
       if (sub) sub.status = nextStatus(sub.status);
-      // propagate to parent task
       if (task?.subtasks) {
+        const prevStatus = task.status;
         task.status = divisionStatus(task.subtasks) as Status;
+        if (task.status === 'done' && prevStatus !== 'done') {
+          this._triggerCodeReview(task.title, div.title);
+        }
       }
     } else {
       const task = div.tasks.find(t => t.id === taskId);
       if (task) {
         task.status = nextStatus(task.status);
-        // cascade to subtasks
         task.subtasks?.forEach(s => { s.status = task.status; });
+        if (task.status === 'done') {
+          this._triggerCodeReview(task.title, div.title);
+        }
       }
     }
     this._refresh();
@@ -201,6 +237,9 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       t.status = next;
       t.subtasks?.forEach(s => { s.status = next; });
     });
+    if (next === 'done') {
+      this._triggerCodeReview(div.title, div.title);
+    }
     this._refresh();
     this._persistDivisions();
   }

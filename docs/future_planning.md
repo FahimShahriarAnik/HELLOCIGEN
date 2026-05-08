@@ -767,6 +767,54 @@ Five distinct visual treatments in `getHtml()`:
 
 ---
 
+## Phase 12: Trigger-Based AI Code Review on Task Completion ✅ COMPLETED
+
+**Branch:** `action-items`
+**Issues addressed:** No automated feedback loop when tasks are marked done. Developers had no lightweight quality signal without explicitly asking @AI.
+**Status:** Implemented and compiled.
+
+### 12.1 — Server Code Review Endpoint ✅
+
+- Added `POST /sessions/:session_id/code-review` in `src/server/server.ts`
+- Accepts `{ task_title, division_title, changed_files: string[] }` in request body
+- Calls GPT-4 with a focused single-line prompt: returns either `"Looks good."` or `"Potential issue: [specific concern]."` (max 80 tokens)
+- Returns `{ assessment: string }` — silently returns `"Code review unavailable (no API key)."` if key is not set
+- Inserted between the PATCH divisions endpoint and POST api-key
+
+### 12.2 — Git Changed Files Helper ✅
+
+- Added `_getChangedFiles()` private async method in `src/ui/taskTrackerProvider.ts`
+- Uses VS Code's built-in `vscode.git` extension API — no `child_process` or shell commands needed
+- Reads `repo.state.workingTreeChanges` and `repo.state.indexChanges`, deduplicates, and returns workspace-relative paths
+- Returns empty array if git extension is inactive or no repository is open (safe for non-git workspaces)
+
+### 12.3 — Review Trigger ✅
+
+- Added `_triggerCodeReview(taskTitle, divisionTitle)` private async method in `src/ui/taskTrackerProvider.ts`
+- Fire-and-forget (never awaited) — non-blocking, does not affect task toggle responsiveness
+- POSTs to the code-review endpoint with task info + changed files
+- Displays result via `vscode.window.showInformationMessage("Code Review: <assessment>")` — informational only, not blocking
+
+### 12.4 — Trigger Wiring ✅
+
+Three trigger sites in `src/ui/taskTrackerProvider.ts`:
+
+| Trigger | Condition |
+|---|---|
+| Direct task toggle | New status === `'done'` |
+| Subtask toggle causing parent to complete | Parent status was not `'done'`, becomes `'done'` after subtask propagation |
+| Division toggle | `next === 'done'` (all tasks in division marked complete) |
+
+### 12.5 — Verification
+
+- [ ] Mark a task done with staged git changes → VS Code info message shows `"Code Review: Looks good."` or `"Code Review: Potential issue: …"`
+- [ ] Mark a task done with no git changes → review still triggers with `changed_files: []`
+- [ ] Mark a task done with no API key → no info message, no crash
+- [ ] Toggle all subtasks done → parent task completes → review fires once (guarded by `prevStatus !== 'done'`)
+- [ ] Toggle a division complete → single review fires for the whole division
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
@@ -794,3 +842,4 @@ Five distinct visual treatments in `getHtml()`:
 - **Phase 8 is complete** — `buildSystemPrompt()` now resolves `owner_id` to participant names and includes full task/subtask `[status]` with per-division done/in-progress/todo counts. AI can now answer progress and ownership questions accurately during @AI chat calls.
 - **Security (future improvement):** The OpenAI API key is stored in plaintext in server memory and any Live Share participant can trigger API calls via server endpoints (e.g., @AI messages, summary generation) using the host's key. Risk is low (localhost-only server, encrypted Live Share tunnel, trusted collaborators), but future iterations should consider: rate limiting per participant, per-session token usage caps, or scoped API keys to prevent abuse.
 - **Phase 11 is complete** — single chat panel with recipient dropdown (Team / AI · Private / DM by name), per-participant SSE routing, private AI queries visible only to sender, DM routing between two participants, five distinct message styles (broadcast-mine, broadcast-theirs, AI, dm-sent, dm-received), and filtered history load/poll per viewer. `sseClients` is now `Map<session_id, Map<participantName, Set<Response>>>`. Legacy messages without `recipient` default to `'broadcast'`.
+- **Phase 12 is complete** — trigger-based AI code review fires on task/division completion. Uses VS Code's built-in `vscode.git` API for changed files (no shell commands). Review is fire-and-forget — shown as a VS Code info message, never blocks task toggling. Subtask-triggered parent completion guarded by `prevStatus !== 'done'` to prevent double-fire.

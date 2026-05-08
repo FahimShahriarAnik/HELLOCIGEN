@@ -398,6 +398,43 @@ app.patch('/sessions/:session_id/divisions', async (req: Request, res: Response)
   }
 });
 
+// POST /sessions/:session_id/code-review — AI code review triggered on task completion.
+// Returns a one-line assessment: "Looks good." or "Potential issue: [description]."
+app.post('/sessions/:session_id/code-review', async (req: Request, res: Response) => {
+  const { task_title, division_title, changed_files } = req.body as {
+    task_title: string;
+    division_title: string;
+    changed_files: string[];
+  };
+
+  if (!openaiApiKey) {
+    return res.json({ assessment: 'Code review unavailable (no API key).' });
+  }
+
+  const fileList = changed_files?.length > 0 ? changed_files.join(', ') : 'no tracked changes';
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a concise code reviewer. Given a completed task and the files that changed, respond with exactly one line: either "Looks good." or "Potential issue: [specific concern]." No other text.'
+        },
+        {
+          role: 'user',
+          content: `Task completed: "${task_title}" (division: "${division_title}")\nChanged files: ${fileList}`
+        }
+      ],
+      max_tokens: 80
+    });
+    res.json({ assessment: response.choices[0].message.content?.trim() ?? 'Looks good.' });
+  } catch (err) {
+    console.error('Code review error:', err);
+    res.json({ assessment: 'Code review unavailable.' });
+  }
+});
+
 // POST /api-key — Store OpenAI API key for server-side AI chat
 app.post('/api-key', (req: Request, res: Response) => {
   const { apiKey } = req.body as { apiKey: string };
