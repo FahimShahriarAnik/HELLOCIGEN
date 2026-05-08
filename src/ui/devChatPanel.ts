@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as http from 'http';
 
 const CHAT_SERVER_URL = 'http://localhost:4000';
-const FALLBACK_POLL_INTERVAL_MS = 10000; // only fires when SSE is down
+const FALLBACK_POLL_INTERVAL_MS = 10000;
 
 export class DevChatPanel {
   private static panel: vscode.WebviewPanel | undefined;
@@ -10,8 +10,8 @@ export class DevChatPanel {
   private static sseRequest: http.ClientRequest | undefined;
   private static sessionId = '';
   private static participantName = '';
-  private static lastSeenId = '0';            // ObjectId hex cursor
-  private static seenIds = new Set<string>(); // dedup guard
+  private static lastSeenId = '0';
+  private static seenIds = new Set<string>();
 
   static dispose(): void {
     this.stopPolling();
@@ -30,7 +30,6 @@ export class DevChatPanel {
       return;
     }
 
-    // Reset state for a fresh panel
     this.lastSeenId = '0';
     this.seenIds.clear();
 
@@ -50,34 +49,37 @@ export class DevChatPanel {
 
     this.panel.webview.onDidReceiveMessage(async msg => {
       if (msg.type === 'send' && msg.text?.trim()) {
-        await this.sendMessage(msg.text.trim());
+        await this.sendMessage(msg.text.trim(), msg.recipient || 'broadcast');
       }
     });
 
-    // Load history, then open SSE stream, then start fallback poll
     this.loadMessages().then(() => {
       this.connectSSE();
       this.startFallbackPoll();
+      this.fetchParticipants();
     });
   }
 
   // ─── Send ────────────────────────────────────────────────────────────────────
 
-  private static async sendMessage(text: string): Promise<void> {
-    const mentionsAi = /@ai\b/i.test(text);
+  private static async sendMessage(text: string, recipient: string): Promise<void> {
+    const isAiRequest = recipient === 'ai' || /@ai\b/i.test(text);
     try {
       const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'user', content: text, participant_name: this.participantName })
+        body: JSON.stringify({
+          role: 'user',
+          content: text,
+          participant_name: this.participantName,
+          recipient
+        })
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-      if (mentionsAi) {
-        // Pair will arrive together via SSE once queue processes it
+      if (isAiRequest) {
         this.panel?.webview.postMessage({ type: 'showThinking' });
       }
-      // Re-enable input immediately after POST — no need to wait for SSE
       this.panel?.webview.postMessage({ type: 'enableSend' });
     } catch (err) {
       this.panel?.webview.postMessage({ type: 'error', text: String(err) });
@@ -85,11 +87,26 @@ export class DevChatPanel {
     }
   }
 
+  // ─── Participants ─────────────────────────────────────────────────────────────
+
+  private static async fetchParticipants(): Promise<void> {
+    try {
+      const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/state`);
+      if (!resp.ok) return;
+      const state = await resp.json() as any;
+      const names: string[] = (state.participants || [])
+        .map((p: any) => p.name as string)
+        .filter((n: string) => n && n !== this.participantName);
+      this.panel?.webview.postMessage({ type: 'setParticipants', participants: names });
+    } catch { /* server not ready */ }
+  }
+
   // ─── History load ────────────────────────────────────────────────────────────
 
   private static async loadMessages(): Promise<void> {
     try {
-      const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=0`);
+      const viewer = encodeURIComponent(this.participantName);
+      const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=0&participant=${viewer}`);
       if (!resp.ok) return;
       const data = await resp.json() as any;
       this.deliverMessages(data.messages ?? []);
@@ -102,7 +119,8 @@ export class DevChatPanel {
   private static connectSSE(): void {
     this.disconnectSSE();
 
-    const path = `/sessions/${this.sessionId}/chat/stream`;
+    const viewer = encodeURIComponent(this.participantName);
+    const path = `/sessions/${this.sessionId}/chat/stream?participant=${viewer}`;
     let buffer = '';
 
     const req = http.get(
@@ -110,7 +128,6 @@ export class DevChatPanel {
       (res) => {
         res.on('data', (chunk: Buffer) => {
           buffer += chunk.toString();
-          // SSE frames are separated by double newlines
           const frames = buffer.split('\n\n');
           buffer = frames.pop() ?? '';
           for (const frame of frames) {
@@ -126,7 +143,6 @@ export class DevChatPanel {
         });
 
         res.on('end', () => {
-          // Server closed — reconnect after a short delay
           if (this.panel) setTimeout(() => this.connectSSE(), 3000);
         });
         res.on('error', () => {
@@ -149,13 +165,16 @@ export class DevChatPanel {
     }
   }
 
-  // ─── Fallback poll (catches up if SSE was down) ──────────────────────────────
+  // ─── Fallback poll ───────────────────────────────────────────────────────────
 
   private static startFallbackPoll(): void {
     this.stopPolling();
     this.pollTimer = setInterval(async () => {
       try {
-        const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=${this.lastSeenId}`);
+        const viewer = encodeURIComponent(this.participantName);
+        const resp = await fetch(
+          `${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat?after=${this.lastSeenId}&participant=${viewer}`
+        );
         if (!resp.ok) return;
         const data = await resp.json() as any;
         this.deliverMessages(data.messages ?? []);
@@ -179,14 +198,16 @@ export class DevChatPanel {
     });
     if (fresh.length === 0) return;
 
-    // Advance cursor to last received message
     const lastId = fresh[fresh.length - 1]._id?.toString?.();
     if (lastId && lastId !== 'undefined') this.lastSeenId = lastId;
 
     this.panel?.webview.postMessage({ type: 'newMessages', messages: fresh });
 
-    // Hide thinking indicator if an AI response arrived
-    if (fresh.some((m: any) => m.role === 'assistant')) {
+    // Only hide thinking if the AI response is actually directed at this viewer
+    if (fresh.some((m: any) =>
+      m.role === 'assistant' &&
+      (!m.recipient || m.recipient === 'broadcast' || m.recipient === this.participantName)
+    )) {
       this.panel?.webview.postMessage({ type: 'hideThinking' });
     }
   }
@@ -227,7 +248,7 @@ export class DevChatPanel {
       padding: 12px 14px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
     .msg {
       max-width: 85%;
@@ -241,21 +262,45 @@ export class DevChatPanel {
     .msg .sender {
       font-size: 10px;
       font-weight: 700;
-      opacity: 0.7;
+      opacity: 0.65;
       margin-bottom: 3px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .msg.user {
+    /* Own broadcast */
+    .msg.mine {
       align-self: flex-end;
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
     }
-    .msg.user .sender { text-align: right; opacity: 0.8; }
+    .msg.mine .sender { text-align: right; }
+    /* Others' broadcast */
+    .msg.theirs {
+      align-self: flex-start;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border);
+    }
+    /* AI response (broadcast or private) */
     .msg.assistant {
       align-self: flex-start;
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-panel-border);
+      border-left: 3px solid var(--vscode-focusBorder, #007acc);
+    }
+    /* DM sent */
+    .msg.dm-sent {
+      align-self: flex-end;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-right: 3px solid var(--vscode-charts-yellow, #e5c07b);
+    }
+    .msg.dm-sent .sender { text-align: right; }
+    /* DM received */
+    .msg.dm-received {
+      align-self: flex-start;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-left: 3px solid var(--vscode-charts-yellow, #e5c07b);
     }
     .msg.error {
       align-self: center;
@@ -272,12 +317,40 @@ export class DevChatPanel {
       display: none;
       padding: 4px 8px;
     }
+    .input-area {
+      border-top: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+    }
+    .recipient-row {
+      padding: 6px 14px 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .recipient-label {
+      font-size: 10px;
+      opacity: 0.55;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+    select {
+      background: var(--vscode-dropdown-background, var(--vscode-input-background));
+      color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+      border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 11px;
+      font-family: var(--vscode-font-family);
+      cursor: pointer;
+      outline: none;
+    }
+    select:focus { border-color: var(--vscode-focusBorder); }
     .input-row {
       display: flex;
       gap: 8px;
-      padding: 10px 14px;
-      border-top: 1px solid var(--vscode-panel-border);
-      flex-shrink: 0;
+      padding: 6px 14px 10px;
     }
     textarea {
       flex: 1;
@@ -315,9 +388,18 @@ export class DevChatPanel {
   <div class="messages" id="msgs">
     <div class="thinking" id="thinking">CoGEN is thinking...</div>
   </div>
-  <div class="input-row">
-    <textarea id="input" placeholder="Type a message... Use @AI to ask the AI" rows="1"></textarea>
-    <button id="sendBtn">Send</button>
+  <div class="input-area">
+    <div class="recipient-row">
+      <span class="recipient-label">To</span>
+      <select id="recipientSelect">
+        <option value="broadcast">Team</option>
+        <option value="ai">AI · Private</option>
+      </select>
+    </div>
+    <div class="input-row">
+      <textarea id="input" placeholder="Message the team… @AI to ask CoGEN" rows="1"></textarea>
+      <button id="sendBtn">Send</button>
+    </div>
   </div>
   <script>
     const vscode = acquireVsCodeApi();
@@ -325,18 +407,39 @@ export class DevChatPanel {
     const thinkingEl = document.getElementById('thinking');
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
+    const recipientSelect = document.getElementById('recipientSelect');
     const myName = '${escapedName}';
 
     function addMsg(msg) {
-      // Move thinking indicator to end of list when new messages arrive
       msgsEl.removeChild(thinkingEl);
 
+      const rec = msg.recipient || 'broadcast';
+      let cssClass, senderText;
+
+      if (msg.role === 'assistant') {
+        cssClass = 'assistant';
+        const tag = rec !== 'broadcast' ? ' · private' : '';
+        senderText = 'CoGEN' + tag;
+      } else if (rec === 'broadcast') {
+        cssClass = msg.participant_name === myName ? 'mine' : 'theirs';
+        senderText = msg.participant_name === myName ? 'You' : (msg.participant_name || 'Unknown');
+      } else if (rec === 'ai') {
+        cssClass = 'dm-sent';
+        senderText = 'You · private AI';
+      } else if (msg.participant_name === myName) {
+        cssClass = 'dm-sent';
+        senderText = 'You → ' + rec;
+      } else {
+        cssClass = 'dm-received';
+        senderText = msg.participant_name + ' → you';
+      }
+
       const el = document.createElement('div');
-      el.className = 'msg ' + (msg.role === 'assistant' ? 'assistant' : 'user');
+      el.className = 'msg ' + cssClass;
 
       const senderDiv = document.createElement('div');
       senderDiv.className = 'sender';
-      senderDiv.textContent = msg.role === 'assistant' ? 'CoGEN' : (msg.participant_name || 'Unknown');
+      senderDiv.textContent = senderText;
 
       const contentDiv = document.createElement('div');
       contentDiv.textContent = msg.content;
@@ -348,13 +451,26 @@ export class DevChatPanel {
       msgsEl.scrollTop = msgsEl.scrollHeight;
     }
 
+    function updatePlaceholder() {
+      const rec = recipientSelect.value;
+      if (rec === 'broadcast') {
+        input.placeholder = 'Message the team… @AI to ask CoGEN';
+      } else if (rec === 'ai') {
+        input.placeholder = 'Ask CoGEN privately…';
+      } else {
+        input.placeholder = 'Direct message to ' + rec + '…';
+      }
+    }
+
+    recipientSelect.addEventListener('change', updatePlaceholder);
+
     function send() {
       const text = input.value.trim();
       if (!text) return;
       input.value = '';
       input.style.height = 'auto';
       sendBtn.disabled = true;
-      vscode.postMessage({ type: 'send', text });
+      vscode.postMessage({ type: 'send', text, recipient: recipientSelect.value });
     }
 
     sendBtn.addEventListener('click', send);
@@ -370,6 +486,16 @@ export class DevChatPanel {
       const d = e.data;
       if (d.type === 'newMessages' && d.messages) {
         d.messages.forEach(m => addMsg(m));
+      }
+      if (d.type === 'setParticipants' && d.participants) {
+        // Remove any existing DM options (keep Team + AI · Private)
+        while (recipientSelect.options.length > 2) recipientSelect.remove(2);
+        d.participants.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          recipientSelect.appendChild(opt);
+        });
       }
       if (d.type === 'enableSend') {
         sendBtn.disabled = false;

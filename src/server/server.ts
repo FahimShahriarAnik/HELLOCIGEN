@@ -47,16 +47,30 @@ function enqueueAiGeneration(session_id: string, work: () => Promise<void>): voi
   aiQueues.set(session_id, next);
 }
 
-// SSE broadcast: one Set<Response> per session for connected clients.
-const sseClients = new Map<string, Set<Response>>();
+// SSE clients: session_id → participantName → Set<Response>
+const sseClients = new Map<string, Map<string, Set<Response>>>();
 
 function broadcastMessages(session_id: string, messages: ChatMessageDoc[]): void {
-  const clients = sseClients.get(session_id);
-  if (!clients || clients.size === 0) return;
-  const payload = `data: ${JSON.stringify(messages)}\n\n`;
-  clients.forEach(res => {
-    try { res.write(payload); } catch { /* client disconnected */ }
-  });
+  const sessionClients = sseClients.get(session_id);
+  if (!sessionClients || sessionClients.size === 0) return;
+
+  for (const msg of messages) {
+    const payload = `data: ${JSON.stringify([msg])}\n\n`;
+    const rec = msg.recipient ?? 'broadcast';
+
+    if (rec === 'broadcast') {
+      sessionClients.forEach(clientSet => {
+        clientSet.forEach(res => { try { res.write(payload); } catch { /* disconnected */ } });
+      });
+    } else {
+      // 'ai' → sender-only; DM → sender + named recipient
+      const targets = new Set<string>([msg.participant_name]);
+      if (rec !== 'ai') targets.add(rec);
+      for (const name of targets) {
+        sessionClients.get(name)?.forEach(res => { try { res.write(payload); } catch { /* disconnected */ } });
+      }
+    }
+  }
 }
 
 app.get("/health", (_req: Request, res: Response) => {
@@ -402,18 +416,23 @@ app.get('/sessions/:session_id/chat/stream', (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  // Register this client
-  if (!sseClients.has(session_id)) sseClients.set(session_id, new Set());
-  sseClients.get(session_id)!.add(res);
+  const participant = (req.query.participant as string) || 'anonymous';
+  if (!sseClients.has(session_id)) sseClients.set(session_id, new Map());
+  const sessionClients = sseClients.get(session_id)!;
+  if (!sessionClients.has(participant)) sessionClients.set(participant, new Set());
+  sessionClients.get(participant)!.add(res);
 
-  // Send a heartbeat every 20s to keep the connection alive through proxies/firewalls
   const heartbeat = setInterval(() => {
     try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
   }, 20000);
 
   req.on('close', () => {
     clearInterval(heartbeat);
-    sseClients.get(session_id)?.delete(res);
+    const clientSet = sessionClients.get(participant);
+    if (clientSet) {
+      clientSet.delete(res);
+      if (clientSet.size === 0) sessionClients.delete(participant);
+    }
   });
 });
 
@@ -423,23 +442,27 @@ app.get('/sessions/:session_id/chat/stream', (req: Request, res: Response) => {
 // is always userMsg_A → aiMsg_A → userMsg_B → aiMsg_B. Both are broadcast together when ready.
 app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
   const session_id = req.params.session_id as string;
-  const { role, content, participant_name, skipAi } = req.body as {
+  const { role, content, participant_name, skipAi, recipient } = req.body as {
     role: 'user' | 'assistant';
     content: string;
     participant_name?: string;
     skipAi?: boolean;
+    recipient?: string;
   };
 
   if (!content) return res.status(400).json({ ok: false, error: 'content is required' });
 
+  const effectiveRecipient = recipient || 'broadcast';
   const mentionsAi = /@ai\b/i.test(content);
-  const shouldQueue = mentionsAi && role !== 'assistant' && !skipAi && !!openaiApiKey;
+  const isPrivateAi = effectiveRecipient === 'ai';
+  const shouldQueue = (mentionsAi || isPrivateAi) && role !== 'assistant' && !skipAi && !!openaiApiKey;
 
   const userMsgData: ChatMessageDoc = {
     session_id,
     role: role || 'user',
     content,
     participant_name: participant_name || 'Unknown',
+    recipient: effectiveRecipient,
     timestamp: new Date().toISOString()
   };
 
@@ -455,9 +478,15 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
       const userInsert = await chatColl.insertOne({ ...userMsgData });
       const insertedUser = { ...userMsgData, _id: userInsert.insertedId };
 
-      // Build AI context from all messages so far (including the one just inserted)
+      // Build AI context: broadcast messages + messages from/to this participant (excludes other users' private chats)
+      const sender = participant_name || 'Unknown';
       const allMessages = await chatColl
-        .find({ session_id })
+        .find({ session_id, $or: [
+          { recipient: 'broadcast' },
+          { recipient: { $exists: false } },
+          { participant_name: sender },
+          { recipient: sender }
+        ]})
         .sort({ _id: 1 })
         .toArray();
 
@@ -488,6 +517,8 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
         role: 'assistant',
         content: response.choices[0].message.content ?? '',
         participant_name: 'CoGEN',
+        // Private AI request → reply only to sender; broadcast @ai → reply to all
+        recipient: isPrivateAi ? (participant_name || 'Unknown') : 'broadcast',
         timestamp: new Date().toISOString()
       };
 
@@ -521,6 +552,7 @@ app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
   try {
     const session_id = req.params.session_id as string;
     const afterParam = req.query.after as string | undefined;
+    const viewerParam = req.query.participant as string | undefined;
 
     const chatColl = await getChatMessagesCollection();
 
@@ -531,6 +563,16 @@ app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
       } catch {
         // Invalid ObjectId — ignore and return from beginning
       }
+    }
+
+    // Filter by viewer: show broadcast (incl. legacy docs without recipient), own messages, and DMs to/from viewer
+    if (viewerParam) {
+      query.$or = [
+        { recipient: 'broadcast' },
+        { recipient: { $exists: false } },
+        { participant_name: viewerParam },
+        { recipient: viewerParam }
+      ];
     }
 
     const messages = await chatColl.find(query).sort({ _id: 1 }).toArray();
@@ -738,7 +780,7 @@ app.get('/sessions/:session_id/summary', async (req: Request, res: Response) => 
   }
 });
 
-const port = process.env.PORT ?? 4000;
+const port = Number(process.env.PORT ?? 4000);
 app.listen(port, '127.0.0.1', () => {
   console.log(`Server listening on http://127.0.0.1:${port}`);
 });

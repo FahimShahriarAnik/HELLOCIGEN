@@ -598,6 +598,175 @@ Phase 6 is already done (server-side). Phase 7 implementation:
 
 ---
 
+## Phase 9: Project Context Broadcast to All Participants ✅ COMPLETED
+
+**Branch:** `action-items`
+**Issues addressed:** Project details (title, description, complexity) were only shown to the host during session setup. Guests had no visibility into the project being worked on.
+**Status:** Implemented and compiled.
+
+### 9.1 — Add `project_details` to `SessionState` ✅
+
+- Added `project_details?: { title: string; description?: string; complexity?: string }` field to the `SessionState` interface in `src/server/server.ts`
+- When `PATCH /sessions/:session_id` receives `division_of_work` and transitions to `"active"`, it now includes `latest[0].project_details` from the persisted MongoDB document in the in-memory `sessionStates` entry
+- Guests polling `GET /sessions/:session_id/state` now receive full project details alongside `project_title`, `division_of_work`, and `participants`
+
+### 9.2 — Pass `project_details` Through Guest Polling ✅
+
+- `src/ui/guestOnboardingView.ts`: when state becomes `"active"`, passes `state.project_details` as an additional argument to `GuestDevelopmentView.createOrShow()`
+
+### 9.3 — Display Project Banner in Guest Development View ✅
+
+- `src/ui/guestDevelopmentView.ts`: `createOrShow()` accepts optional `projectDetails` parameter
+- `getHtml()` renders a project banner card above the division grid showing:
+  - Project title (bold, 16px)
+  - Complexity badge (styled pill with border)
+  - Description (dimmed, line-height 1.6)
+- Banner is only rendered when `projectDetails.title` is present (safe for old sessions without it)
+
+### 9.4 — Verification
+
+- [ ] Start session → host selects a project → confirms divisions
+- [ ] Guest development view shows project banner with title, complexity, and description
+- [ ] Sessions with no `project_details` in MongoDB show no banner (no crash)
+- [ ] Project title already shown in DevChatPanel title bar — confirm both are consistent
+
+---
+
+## Phase 10: File Presence Overlay in Explorer Panel ✅ COMPLETED
+
+**Branch:** `action-items`
+**Issues addressed:** No visibility into which files teammates are actively editing. Developers had to ask in chat or infer from task assignments.
+**Status:** Implemented and compiled.
+
+### 10.1 — `FilePresenceDecorator` (new file) ✅
+
+- New file: `src/ui/filePresenceDecorator.ts`
+- Implements `vscode.FileDecorationProvider` — registered with VS Code to decorate Explorer file entries
+- Presence stored as `Map<relativeKey, Set<participantName>>` using workspace-relative paths as keys so `file:` (host) and `vsls:` (guest) URIs resolve to the same key via `vscode.workspace.asRelativePath()`
+- `provideFileDecoration(uri)`: returns a 2-char badge (initials for 1 person, `N+` for multiple), a tooltip listing all names, and a per-participant color from a 6-color `charts.*` theme color palette
+- `setParticipantFile(name, key)`: updates presence map for one participant, fires `_onDidChangeFileDecorations(undefined)` to refresh all decorated URIs
+- `setAllPresence(snapshot)`: bulk-updates from a host-broadcast snapshot (used by guests)
+- `clearAll()`: wipes all state when session ends and fires a refresh
+- Static `toKey(uri)`: converts any `file:` or `vsls:` URI to a workspace-relative path; returns `null` for out-of-workspace or unsupported schemes
+
+### 10.2 — `PresenceManager` (new file) ✅
+
+- New file: `src/utils/presenceManager.ts`
+- `initPresenceManager(liveShare, myName, decorator, context): Promise<Disposable>` — call once per session for both host and guest
+- **Host path:** calls `liveShare.shareService('cogen-presence')`, broadcasts its own file changes via `onDidChangeActiveTextEditor`, relays `file-focus` notifications from guests and rebroadcasts the full presence snapshot to all guests via `service.notify('presence-update', { presence })`
+- **Guest path:** calls `liveShare.getSharedService('cogen-presence')`, broadcasts own file changes to host via `proxy.notify('file-focus', { name, key })`, receives `presence-update` snapshots from host and calls `decorator.setAllPresence()`
+- Both paths seed immediately with the current active editor on init
+- Returns a `Disposable` wrapping the `onDidChangeActiveTextEditor` listener for clean teardown
+
+### 10.3 — Wire Up in `extension.ts` ✅
+
+- Imports `FilePresenceDecorator` and `initPresenceManager`
+- Instantiates `FilePresenceDecorator` on activate, registers it with `vscode.window.registerFileDecorationProvider(decorator)`
+- **Host:** calls `initPresenceManager` immediately after `liveShare.share()` succeeds (name from `liveShare.session.user.displayName`)
+- **Guest:** calls `initPresenceManager` inside `tryShowOnboarding()`, guarded by `presenceInitializedForSession` flag to prevent double-init on repeated `onDidChangeSession` fires
+- Calls `decorator.clearAll()` and resets `presenceInitializedForSession` when session ends (`Role.None` detected)
+
+### 10.4 — Known Constraints
+
+- VS Code `FileDecorationProvider` badge is max 2 characters — initials only; full names available in tooltip on hover
+- Decorations show in Explorer, breadcrumbs, and open-editor tabs (all standard VS Code decoration surfaces)
+- Presence is self-reported (each participant's extension instance broadcasts its own active file) — no native Live Share API for file focus exists
+- Guest file URIs use `vsls:` scheme; host uses `file:` scheme. The relative-path key normalization ensures both sides see the same presence data
+
+### 10.5 — Verification
+
+- [ ] Host opens a file → own badge appears in Explorer immediately
+- [ ] Guest opens a file → badge appears on host's Explorer within one editor-change event
+- [ ] Host opens a file → guest's Explorer shows host badge (via `presence-update` broadcast)
+- [ ] Multiple teammates in the same file → `N+` badge, tooltip lists all names
+- [ ] Participant switches files → old file badge removed, new file badge appears
+- [ ] Session ends → all badges cleared from Explorer
+- [ ] Open a file outside the workspace → no badge, no crash
+
+---
+
+## Phase 11: Unified Chat Panel with Recipient Routing ✅ COMPLETED
+
+**Branch:** `action-items`
+**Issues addressed:** Chat was broadcast-only with no way to send a private message to AI or a specific teammate. All messages were visible to all participants regardless of intent.
+**Status:** Implemented and compiled.
+
+### 11.1 — Recipient Field in `ChatMessageDoc` ✅
+
+- Added `recipient: 'broadcast' | 'ai' | string` field to `ChatMessageDoc` in `src/server/db.ts`
+- `'broadcast'` — visible to all participants (default, preserves legacy behavior)
+- `'ai'` — private query to AI; only the sender sees their own message and the AI response
+- Any other string — DM to that participant name; only sender and named recipient see it
+- Legacy documents without `recipient` are treated as `'broadcast'` throughout (no migration needed)
+
+### 11.2 — Per-Participant SSE Routing ✅
+
+- Changed `sseClients` from `Map<session_id, Set<Response>>` to `Map<session_id, Map<participantName, Set<Response>>>` in `src/server/server.ts`
+- SSE endpoint now accepts `?participant=name` query param to register clients under their name
+- `broadcastMessages()` rewritten to route per-message based on `recipient`:
+  - `broadcast` → sent to all connected participants
+  - `ai` → sent to sender only (their private AI query is visible only to them)
+  - DM name → sent to sender + named recipient only
+- Cleanup on SSE close removes empty participant sets from the inner map
+
+### 11.3 — Private AI Trigger ✅
+
+- POST `/sessions/:session_id/chat` now reads `recipient` from request body
+- `shouldQueue` condition expanded: `(mentionsAi || recipient === 'ai') && role !== 'assistant' && !skipAi && !!openaiApiKey` — AI is triggered by either `@ai` mention or explicit `recipient: 'ai'`, no `@ai` text needed in the message
+- AI response for a private query is stored with `recipient: senderName` so only the original requester receives it via SSE
+- AI response for a broadcast `@ai` is stored with `recipient: 'broadcast'` (unchanged behavior)
+- AI context query filters out other participants' private messages — only broadcast messages, sender's own messages, and messages directed to the sender are included in the OpenAI prompt
+
+### 11.4 — History Load & Fallback Poll Filtering ✅
+
+- GET `/sessions/:session_id/chat` accepts `?participant=name` query param
+- When provided, query filters to: `recipient: 'broadcast'`, docs without `recipient` (legacy), `participant_name: viewer`, or `recipient: viewer`
+- Ensures each participant only loads their own private messages on history load and fallback poll
+- `DevChatPanel` passes `?participant=encodedName` in both `loadMessages()` and the fallback poll
+
+### 11.5 — Recipient Dropdown UI ✅
+
+- `src/ui/devChatPanel.ts` rewritten with a "To:" label + `<select>` dropdown above the textarea
+- Dropdown options: **Team** (`broadcast`), **AI · Private** (`ai`), then teammate names populated dynamically via `setParticipants` postMessage
+- `fetchParticipants()` fetches `GET /sessions/:id/state` after panel opens and posts names to webview; existing state endpoint returns `participants: [{ id, name }]`
+- Textarea placeholder updates on dropdown change: `"Message the team… @AI to ask CoGEN"` / `"Ask CoGEN privately…"` / `"Direct message to [name]…"`
+- `send()` passes `recipient: recipientSelect.value` alongside `text` in the postMessage
+
+### 11.6 — Visual Message Differentiation ✅
+
+Five distinct visual treatments in `getHtml()`:
+
+| Class | Alignment | Style | Label pattern |
+|---|---|---|---|
+| `mine` | Right | Button background | `You` |
+| `theirs` | Left | Input bg + border | `Alice` |
+| `assistant` | Left | Input bg + blue left border | `CoGEN` / `CoGEN · private` |
+| `dm-sent` | Right | Input bg + amber right border | `You → Bob` / `You · private AI` |
+| `dm-received` | Left | Input bg + amber left border | `Alice → you` |
+
+### 11.7 — Thinking Indicator Fix ✅
+
+- `deliverMessages()` in `DevChatPanel` now only fires `hideThinking` when an assistant message arrives that is `recipient: 'broadcast'` or `recipient: currentParticipant`
+- Prevents a broadcast AI response from another user's `@AI` query from prematurely hiding the current user's thinking indicator while they wait for their own private AI response
+
+### 11.8 — Pre-existing Bug Fix ✅
+
+- `const port = process.env.PORT ?? 4000` produced `string | number`, causing a TS2769 error on `app.listen()`
+- Fixed to `Number(process.env.PORT ?? 4000)` — narrows to `number` as `app.listen` requires
+
+### 11.9 — Verification
+
+- [ ] Send a team message → all participants see it, no special border
+- [ ] Select "AI · Private", send message → only sender sees query + AI response; no `@AI` text needed
+- [ ] Broadcast `@AI` message → everyone sees both user message and CoGEN response
+- [ ] Select a teammate name, send DM → only sender and that teammate see it with amber border
+- [ ] Participant dropdown populates dynamically after panel opens
+- [ ] History load only returns messages visible to current viewer (no other users' private chats)
+- [ ] Thinking indicator shows only for current user's AI requests; not hidden by others' broadcast AI responses
+- [ ] Build VSIX: `npx vsce package`
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
@@ -624,3 +793,4 @@ Phase 6 is already done (server-side). Phase 7 implementation:
 - **`isHost` field is public** on `SessionDashboard` — needed by `extension.ts` to guard auto-end so only the host triggers `endSession()` on Live Share disconnect. Guests detect completion via their own sidebar polling.
 - **Phase 8 is complete** — `buildSystemPrompt()` now resolves `owner_id` to participant names and includes full task/subtask `[status]` with per-division done/in-progress/todo counts. AI can now answer progress and ownership questions accurately during @AI chat calls.
 - **Security (future improvement):** The OpenAI API key is stored in plaintext in server memory and any Live Share participant can trigger API calls via server endpoints (e.g., @AI messages, summary generation) using the host's key. Risk is low (localhost-only server, encrypted Live Share tunnel, trusted collaborators), but future iterations should consider: rate limiting per participant, per-session token usage caps, or scoped API keys to prevent abuse.
+- **Phase 11 is complete** — single chat panel with recipient dropdown (Team / AI · Private / DM by name), per-participant SSE routing, private AI queries visible only to sender, DM routing between two participants, five distinct message styles (broadcast-mine, broadcast-theirs, AI, dm-sent, dm-received), and filtered history load/poll per viewer. `sseClients` is now `Map<session_id, Map<participantName, Set<Response>>>`. Legacy messages without `recipient` default to `'broadcast'`.

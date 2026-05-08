@@ -39,6 +39,8 @@ export interface ChatMessageDoc {
   role: 'user' | 'assistant';
   content: string;
   participant_name: string;
+  // 'broadcast' = visible to all; 'ai' = private query to AI (sender-only); any other string = DM to that participant
+  recipient: 'broadcast' | 'ai' | string;
   timestamp: string;
 }
 
