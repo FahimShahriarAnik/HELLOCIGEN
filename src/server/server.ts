@@ -398,6 +398,75 @@ app.patch('/sessions/:session_id/divisions', async (req: Request, res: Response)
   }
 });
 
+// POST /sessions/:session_id/task-complete — Broadcast completion notification + AI acknowledgment.
+app.post('/sessions/:session_id/task-complete', async (req: Request, res: Response) => {
+  const session_id = req.params.session_id as string;
+  const { taskTitle, participantName, participantLabel } = req.body as {
+    taskTitle: string;
+    participantName: string;
+    participantLabel: string; // e.g. "P1"
+  };
+
+  if (!taskTitle || !participantName) {
+    return res.status(400).json({ ok: false, error: 'taskTitle and participantName are required' });
+  }
+
+  const notificationContent = `${participantLabel} completed: ${taskTitle}`;
+
+  const notificationMsg: ChatMessageDoc = {
+    session_id,
+    role: 'assistant',
+    content: notificationContent,
+    participant_name: 'System',
+    recipient: 'broadcast',
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    const chatColl = await getChatMessagesCollection();
+    const inserted = await chatColl.insertOne({ ...notificationMsg });
+    broadcastMessages(session_id, [{ ...notificationMsg, _id: inserted.insertedId }]);
+  } catch (err) {
+    console.error('task-complete notification error:', err);
+    return res.status(500).json({ ok: false, error: 'Failed to broadcast notification' });
+  }
+
+  res.json({ ok: true });
+
+  if (!openaiApiKey) return;
+
+  enqueueAiGeneration(session_id, async () => {
+    const chatColl = await getChatMessagesCollection();
+    const openai = new OpenAI({ apiKey: openaiApiKey });
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are CoGEN, an AI project manager. A team member just completed a task. Reply with a single short encouraging sentence (under 15 words). No markdown, no emoji.'
+          },
+          { role: 'user', content: `${participantName} just completed: "${taskTitle}"` }
+        ],
+        max_tokens: 60
+      });
+      const ackContent = response.choices[0].message.content?.trim() ?? `Nice work, ${participantName}!`;
+      const ackMsg: ChatMessageDoc = {
+        session_id,
+        role: 'assistant',
+        content: ackContent,
+        participant_name: 'CoGEN',
+        recipient: 'broadcast',
+        timestamp: new Date().toISOString()
+      };
+      const ackInsert = await chatColl.insertOne({ ...ackMsg });
+      broadcastMessages(session_id, [{ ...ackMsg, _id: ackInsert.insertedId }]);
+    } catch (err) {
+      console.error('task-complete AI ack error:', err);
+    }
+  });
+});
+
 // POST /sessions/:session_id/code-review — AI code review triggered on task completion.
 // Returns a one-line assessment: "Looks good." or "Potential issue: [description]."
 app.post('/sessions/:session_id/code-review', async (req: Request, res: Response) => {

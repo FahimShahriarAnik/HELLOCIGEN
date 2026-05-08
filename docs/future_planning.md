@@ -815,6 +815,54 @@ Three trigger sites in `src/ui/taskTrackerProvider.ts`:
 
 ---
 
+## Phase 13: Task Completion Broadcast + AI Acknowledgment ✅ COMPLETED
+
+**Branch:** `action-items`
+**Issues addressed:** No team visibility when a participant marks a task done. Task status changes were silent — other participants only noticed via the 4s tracker poll.
+**Status:** Implemented and compiled.
+
+### 13.1 — Server Endpoint: `POST /sessions/:session_id/task-complete` ✅
+
+- Added endpoint in `src/server/server.ts` (inserted before the code-review endpoint)
+- Accepts `{ taskTitle, participantName, participantLabel }` (e.g. `participantLabel = "P2"`)
+- Inserts a `System` broadcast chat message: `"P2 completed: Task Title"` → SSE-pushed to all clients immediately
+- Returns `200` before triggering AI so the client is never blocked
+- If `openaiApiKey` is set, queues an AI acknowledgment via `enqueueAiGeneration`:
+  - Calls GPT-4 with a ≤15-word single-sentence encouraging acknowledgment prompt (max 60 tokens)
+  - Inserts `CoGEN` assistant message with `recipient: 'broadcast'`
+  - Broadcasts via `broadcastMessages()` to all SSE clients
+- If no API key: notification still broadcasts, AI ack silently skipped
+
+### 13.2 — `_notifyTaskComplete()` in TaskTrackerProvider ✅
+
+- Added private async helper in `src/ui/taskTrackerProvider.ts`
+- Resolves `owner_id` → participant name using `_participants` array; falls back to raw `owner_id` string if participants list is empty
+- Computes `participantLabel` as `P{index+1}` (1-based) from position in `_participants` array
+- POSTs to `POST /sessions/:session_id/task-complete` — fire-and-forget, non-blocking
+
+### 13.3 — Trigger Wiring ✅
+
+Called alongside `_triggerCodeReview()` at the same three trigger sites:
+
+| Trigger | Condition |
+|---|---|
+| Direct task toggle | New status === `'done'` |
+| Subtask toggle causing parent to complete | Parent status was not `'done'`, becomes `'done'` after subtask propagation |
+| Division toggle | `next === 'done'` (all tasks in division marked complete) |
+
+Division-level toggle emits one notification for the whole division (using `div.title` as `taskTitle`), not one per task.
+
+### 13.4 — Verification
+
+- [ ] Mark a task done → System message `"P1 completed: Task Title"` appears in chat for all participants
+- [ ] API key set → CoGEN acknowledgment appears within seconds (queued after notification)
+- [ ] No API key → notification still broadcasts, no crash
+- [ ] Subtask completion triggers parent task complete → one notification fires (guarded by `prevStatus !== 'done'`)
+- [ ] Toggle a full division complete → one notification fires using division title
+- [ ] `_participants` empty (edge case) → notification uses raw `owner_id` as name/label, no crash
+
+---
+
 ## Notes
 
 - **Phase 1 is complete** — guest state sync, polling, view transitions, and participant identification all implemented
@@ -843,3 +891,4 @@ Three trigger sites in `src/ui/taskTrackerProvider.ts`:
 - **Security (future improvement):** The OpenAI API key is stored in plaintext in server memory and any Live Share participant can trigger API calls via server endpoints (e.g., @AI messages, summary generation) using the host's key. Risk is low (localhost-only server, encrypted Live Share tunnel, trusted collaborators), but future iterations should consider: rate limiting per participant, per-session token usage caps, or scoped API keys to prevent abuse.
 - **Phase 11 is complete** — single chat panel with recipient dropdown (Team / AI · Private / DM by name), per-participant SSE routing, private AI queries visible only to sender, DM routing between two participants, five distinct message styles (broadcast-mine, broadcast-theirs, AI, dm-sent, dm-received), and filtered history load/poll per viewer. `sseClients` is now `Map<session_id, Map<participantName, Set<Response>>>`. Legacy messages without `recipient` default to `'broadcast'`.
 - **Phase 12 is complete** — trigger-based AI code review fires on task/division completion. Uses VS Code's built-in `vscode.git` API for changed files (no shell commands). Review is fire-and-forget — shown as a VS Code info message, never blocks task toggling. Subtask-triggered parent completion guarded by `prevStatus !== 'done'` to prevent double-fire.
+- **Phase 13 is complete** — task completion broadcasts a `System` chat message (`"P1 completed: Task Title"`) to all participants via SSE immediately. If API key is set, CoGEN queues a brief (≤15-word) acknowledgment via `enqueueAiGeneration`. Uses same three trigger sites as Phase 12 code review. Participant label (`P1`/`P2`) resolved from `_participants` array index; falls back to raw `owner_id` if list is empty.

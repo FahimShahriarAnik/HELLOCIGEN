@@ -168,6 +168,22 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
     }))];
   }
 
+  private async _notifyTaskComplete(taskTitle: string, ownerId: string): Promise<void> {
+    if (!this._sessionId) return;
+    const idx = this._participants.findIndex(p => p.id === ownerId);
+    const participantName = idx >= 0 ? this._participants[idx].name : ownerId;
+    const participantLabel = idx >= 0 ? `P${idx + 1}` : participantName;
+    try {
+      await fetch(`${SERVER_URL}/sessions/${this._sessionId}/task-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskTitle, participantName, participantLabel })
+      });
+    } catch {
+      // Non-critical
+    }
+  }
+
   private async _triggerCodeReview(taskTitle: string, divisionTitle: string): Promise<void> {
     if (!this._sessionId) return;
     const changedFiles = await this._getChangedFiles();
@@ -212,6 +228,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
         task.status = divisionStatus(task.subtasks) as Status;
         if (task.status === 'done' && prevStatus !== 'done') {
           this._triggerCodeReview(task.title, div.title);
+          this._notifyTaskComplete(task.title, div.owner_id);
         }
       }
     } else {
@@ -221,6 +238,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
         task.subtasks?.forEach(s => { s.status = task.status; });
         if (task.status === 'done') {
           this._triggerCodeReview(task.title, div.title);
+          this._notifyTaskComplete(task.title, div.owner_id);
         }
       }
     }
@@ -239,6 +257,7 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
     });
     if (next === 'done') {
       this._triggerCodeReview(div.title, div.title);
+      this._notifyTaskComplete(div.title, div.owner_id);
     }
     this._refresh();
     this._persistDivisions();
