@@ -5,7 +5,6 @@ import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument, Division } from "../models/sessionLog";
 import type { Request, Response } from "express";
 import { OpenAI } from 'openai';
-import { ObjectId } from "mongodb";
 
 
 // Create Express app
@@ -664,11 +663,7 @@ app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
 
     const query: any = { session_id };
     if (afterParam && afterParam !== '0') {
-      try {
-        query._id = { $gt: new ObjectId(afterParam) };
-      } catch {
-        // Invalid ObjectId — ignore and return from beginning
-      }
+      query._id = { $gt: { '$oid': afterParam } };
     }
 
     // Filter by viewer: show broadcast (incl. legacy docs without recipient), own messages, and DMs to/from viewer
@@ -682,9 +677,8 @@ app.get('/sessions/:session_id/chat', async (req: Request, res: Response) => {
     }
 
     const messages = await chatColl.find(query).sort({ _id: 1 }).toArray();
-    const nextCursor = messages.length > 0
-      ? messages[messages.length - 1]._id!.toHexString()
-      : afterParam ?? '0';
+    const lastId = messages.length > 0 ? messages[messages.length - 1]._id : undefined;
+    const nextCursor = lastId?.['$oid'] ?? String(lastId ?? afterParam ?? '0');
 
     res.json({ messages, nextCursor });
   } catch (err) {
