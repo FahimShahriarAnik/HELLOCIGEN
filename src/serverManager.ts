@@ -19,8 +19,13 @@ export class ServerManager {
   private intentionallyStopped = false;
 
   async startServer(): Promise<void> {
-    if (serverReady || serverProcess) {
+    if (serverReady && serverProcess) {
       output.appendLine("Server already running");
+      return;
+    }
+    if (serverProcess && !serverReady) {
+      // Process spawned but not yet healthy — wait instead of re-forking
+      await this.waitForReady();
       return;
     }
 
