@@ -2,10 +2,11 @@
 import express from "express";
 import { getProjectConfigCollection, getSessionLogCollection, getChatMessagesCollection, ChatMessageDoc } from "./db";
 import { ProjectConfigDocument } from "../models/projectConfig";
-import { SessionLogDocument, Division } from "../models/sessionLog";
+import { SessionLogDocument, Division, PendingProposal } from "../models/sessionLog";
 import type { Request, Response } from "express";
 import { OpenAI } from 'openai';
 import { ObjectId } from "mongodb";
+import { generateRedistribution, validateRedistribution, RedistributionDivision } from "../utils/aiUtils";
 
 
 // Create Express app
@@ -213,6 +214,12 @@ app.patch("/sessions/:session_id", async (req: Request, res: Response) => {
       update.last_updated = new Date().toISOString();
     }
 
+    // When division_of_work lands, the session has been confirmed and is active.
+    // Persist that to MongoDB so endpoints reading the session doc (e.g. /redistribute) see the right status.
+    if (update.division_of_work && !update.status) {
+      update.status = "active";
+    }
+
     const result = await coll.updateOne(
       { session_id, session_number: latest[0].session_number },  // target latest
       { $set: update }
@@ -386,9 +393,10 @@ app.patch('/sessions/:session_id/divisions', async (req: Request, res: Response)
       return res.status(404).json({ ok: false, error: 'Session not found' });
     }
 
+    const nextVersion = (latest[0].division_version ?? 0) + 1;
     await coll.updateOne(
       { _id: latest[0]._id },
-      { $set: { division_of_work } }
+      { $set: { division_of_work, division_version: nextVersion } }
     );
 
     res.json({ ok: true });
@@ -504,6 +512,196 @@ app.post('/sessions/:session_id/code-review', async (req: Request, res: Response
   }
 });
 
+// POST /sessions/:session_id/redistribute — slash-command-triggered AI task redistribution proposal.
+// Phase 1: generates a proposal and posts it to chat. Does NOT apply changes to division_of_work.
+// The host's accept/reject keyword handling lands in Phase 2.
+app.post('/sessions/:session_id/redistribute', async (req: Request, res: Response) => {
+  const session_id = req.params.session_id as string;
+  const { new_requirement, participant_name } = req.body as {
+    new_requirement: string;
+    participant_name: string;
+  };
+
+  if (!new_requirement || !new_requirement.trim()) {
+    return res.status(400).json({ ok: false, error: 'new_requirement is required' });
+  }
+  if (!participant_name) {
+    return res.status(400).json({ ok: false, error: 'participant_name is required' });
+  }
+  if (!openaiApiKey) {
+    return res.status(503).json({ ok: false, error: 'OpenAI API key not configured' });
+  }
+
+  const sessionColl = await getSessionLogCollection();
+  const sessionDocs = await sessionColl
+    .find({ session_id })
+    .sort({ session_number: -1 })
+    .limit(1)
+    .toArray();
+  if (sessionDocs.length === 0) {
+    return res.status(404).json({ ok: false, error: 'Session not found' });
+  }
+  const session = sessionDocs[0];
+  const inMemoryStatus = sessionStates.get(session_id)?.status;
+  const effectiveStatus = session.status ?? inMemoryStatus;
+  const hasDivisions = (session.division_of_work?.length ?? 0) > 0;
+  if (effectiveStatus === 'completed') {
+    return res.status(400).json({ ok: false, error: 'Cannot redistribute a completed session.' });
+  }
+  if (!hasDivisions) {
+    return res.status(400).json({ ok: false, error: 'Cannot redistribute before the initial division is created.' });
+  }
+
+  res.json({ ok: true, queued: true });
+
+  enqueueAiGeneration(session_id, async () => {
+    const chatColl = await getChatMessagesCollection();
+    const trimmed = new_requirement.trim();
+
+    const userMsg: ChatMessageDoc = {
+      session_id,
+      role: 'user',
+      content: `/redistribute ${trimmed}`,
+      participant_name,
+      recipient: 'broadcast',
+      timestamp: new Date().toISOString()
+    };
+    const userInsert = await chatColl.insertOne({ ...userMsg });
+    broadcastMessages(session_id, [{ ...userMsg, _id: userInsert.insertedId }]);
+
+    if (session.pending_proposal) {
+      await postCogenMessage(
+        session_id,
+        `Previous proposal "${session.pending_proposal.new_requirement}" was superseded by a newer one.`
+      );
+    }
+
+    const project = session.project_details;
+    const participants = (session.participants ?? []).map(p => ({
+      id: p.id,
+      name: p.name,
+      strengths: p.strengths,
+      weaknesses: p.weaknesses
+    }));
+    const existing = (session.division_of_work ?? []) as unknown as RedistributionDivision[];
+
+    let proposed: RedistributionDivision[] | null = null;
+    let lastViolations: string[] = [];
+
+    try {
+      const first = await generateRedistribution(project, participants, existing, trimmed, openaiApiKey!);
+      const v1 = validateRedistribution(existing, first);
+      if (v1.ok) {
+        proposed = first;
+      } else {
+        lastViolations = v1.violations;
+        const retry = await generateRedistribution(project, participants, existing, trimmed, openaiApiKey!, v1.violations);
+        const v2 = validateRedistribution(existing, retry);
+        if (v2.ok) {
+          proposed = retry;
+        } else {
+          lastViolations = v2.violations;
+        }
+      }
+    } catch (err) {
+      console.error('[redistribute] AI generation error:', err);
+      await postCogenMessage(
+        session_id,
+        `Could not generate a redistribution proposal — internal error. Please try again.`
+      );
+      return;
+    }
+
+    if (!proposed) {
+      await postCogenMessage(
+        session_id,
+        `Couldn't generate a valid redistribution proposal for "${trimmed}" — the AI output failed constraints (${lastViolations.length} violations). Try rephrasing the requirement.`
+      );
+      return;
+    }
+
+    const proposalId = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const pending: PendingProposal = {
+      id: proposalId,
+      new_requirement: trimmed,
+      proposed_divisions: proposed as unknown as Division[],
+      created_at: new Date().toISOString(),
+      triggered_by: participant_name
+    };
+    await sessionColl.updateOne(
+      { _id: session._id },
+      { $set: { pending_proposal: pending, last_updated: new Date().toISOString() } }
+    );
+
+    const proposalText = formatProposalMessage(existing, proposed, trimmed);
+    await postCogenMessage(session_id, proposalText);
+  });
+});
+
+async function postCogenMessage(session_id: string, content: string): Promise<void> {
+  const chatColl = await getChatMessagesCollection();
+  const msg: ChatMessageDoc = {
+    session_id,
+    role: 'assistant',
+    content,
+    participant_name: 'CoGEN',
+    recipient: 'broadcast',
+    timestamp: new Date().toISOString()
+  };
+  const insert = await chatColl.insertOne({ ...msg });
+  broadcastMessages(session_id, [{ ...msg, _id: insert.insertedId }]);
+}
+
+function formatProposalMessage(
+  existing: RedistributionDivision[],
+  proposed: RedistributionDivision[],
+  newRequirement: string
+): string {
+  const lines: string[] = [];
+  lines.push(`Proposed redistribution for: "${newRequirement}"`);
+  lines.push('');
+
+  const exByOwner = new Map(existing.map(d => [d.owner_id, d]));
+  let anyChange = false;
+  for (const propDiv of proposed) {
+    const exDiv = exByOwner.get(propDiv.owner_id);
+    if (!exDiv) continue;
+
+    const exTodoIds = new Set(exDiv.tasks.filter(t => t.status === 'todo').map(t => t.id));
+    const propTodoIds = new Set(propDiv.tasks.filter(t => t.status === 'todo').map(t => t.id));
+
+    const added = propDiv.tasks.filter(t => t.status === 'todo' && !exTodoIds.has(t.id));
+    const removed = exDiv.tasks.filter(t => t.status === 'todo' && !propTodoIds.has(t.id));
+
+    const exFiles = new Set(exDiv.files ?? []);
+    const newFiles = (propDiv.files ?? []).filter(f => !exFiles.has(f));
+
+    if (added.length === 0 && removed.length === 0 && newFiles.length === 0) continue;
+    anyChange = true;
+
+    lines.push(`${propDiv.title} (owner: ${propDiv.owner_id})`);
+    for (const t of added) {
+      lines.push(`  + Add task: "${t.title}"${t.files?.length ? ` [${t.files.join(', ')}]` : ''}`);
+    }
+    for (const t of removed) {
+      lines.push(`  - Drop task: "${t.title}"`);
+    }
+    if (newFiles.length > 0) {
+      lines.push(`  + New files: ${newFiles.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  if (!anyChange) {
+    lines.push('(No changes proposed — the new requirement appears to be already covered by the existing plan.)');
+    lines.push('');
+  }
+
+  lines.push('Host: reply with `accept` to apply, `reject` to discard. (Phase 1 build — accept/reject handling not yet wired; nothing will be written to MongoDB on accept until Phase 2.)');
+
+  return lines.join('\n');
+}
+
 // POST /api-key — Store OpenAI API key for server-side AI chat
 app.post('/api-key', (req: Request, res: Response) => {
   const { apiKey } = req.body as { apiKey: string };
@@ -563,6 +761,12 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
   const isPrivateAi = effectiveRecipient === 'ai';
   const shouldQueue = (mentionsAi || isPrivateAi) && role !== 'assistant' && !skipAi && !!openaiApiKey;
 
+  const acceptRegex = /^\s*(accept|apply|approve|lgtm)\.?\s*$/i;
+  const rejectRegex = /^\s*(reject|cancel|discard|no)\.?\s*$/i;
+  const isAccept = acceptRegex.test(content);
+  const isReject = rejectRegex.test(content);
+  const isProposalAction = (isAccept || isReject) && role !== 'assistant' && effectiveRecipient === 'broadcast';
+
   const userMsgData: ChatMessageDoc = {
     session_id,
     role: role || 'user',
@@ -571,6 +775,67 @@ app.post('/sessions/:session_id/chat', async (req: Request, res: Response) => {
     recipient: effectiveRecipient,
     timestamp: new Date().toISOString()
   };
+
+  if (isProposalAction) {
+    res.json({ ok: true, queued: true });
+
+    enqueueAiGeneration(session_id, async () => {
+      const chatColl = await getChatMessagesCollection();
+      const sessionColl = await getSessionLogCollection();
+
+      const userInsert = await chatColl.insertOne({ ...userMsgData });
+      const insertedUser = { ...userMsgData, _id: userInsert.insertedId };
+      broadcastMessages(session_id, [insertedUser]);
+
+      const fresh = await sessionColl
+        .find({ session_id })
+        .sort({ session_number: -1 })
+        .limit(1)
+        .toArray();
+      const session = fresh[0];
+      if (!session?.pending_proposal) return;
+
+      const sender = session.participants?.find(p => p.name === (participant_name || ''));
+      if (sender?.role !== 'Host') return;
+
+      if (isAccept) {
+        const proposal = session.pending_proposal;
+        const nextVersion = (session.division_version ?? 0) + 1;
+        await sessionColl.updateOne(
+          { _id: session._id },
+          {
+            $set: {
+              division_of_work: proposal.proposed_divisions,
+              division_version: nextVersion,
+              last_updated: new Date().toISOString()
+            },
+            $unset: { pending_proposal: '' }
+          }
+        );
+
+        const inMem = sessionStates.get(session_id);
+        if (inMem) {
+          inMem.division_of_work = proposal.proposed_divisions;
+        }
+
+        await postCogenMessage(
+          session_id,
+          `Task tracker updated — new division applied (v${nextVersion}).`
+        );
+      } else {
+        await sessionColl.updateOne(
+          { _id: session._id },
+          {
+            $unset: { pending_proposal: '' },
+            $set: { last_updated: new Date().toISOString() }
+          }
+        );
+        await postCogenMessage(session_id, 'Proposal discarded.');
+      }
+    });
+
+    return;
+  }
 
   if (shouldQueue) {
     // Respond immediately — queue owns both inserts so the pair lands atomically

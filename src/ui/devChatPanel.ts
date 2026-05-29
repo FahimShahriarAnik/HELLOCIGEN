@@ -63,6 +63,16 @@ export class DevChatPanel {
   // ─── Send ────────────────────────────────────────────────────────────────────
 
   private static async sendMessage(text: string, recipient: string): Promise<void> {
+    const slashMatch = text.match(/^\/redistribute\s+(.+)$/i);
+    if (slashMatch) {
+      return this.sendRedistributeCommand(slashMatch[1].trim());
+    }
+    if (/^\/redistribute\s*$/i.test(text)) {
+      this.panel?.webview.postMessage({ type: 'error', text: 'Usage: /redistribute <new requirement description>' });
+      this.panel?.webview.postMessage({ type: 'enableSend' });
+      return;
+    }
+
     const isAiRequest = recipient === 'ai' || /@ai\b/i.test(text);
     try {
       const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/chat`, {
@@ -83,6 +93,28 @@ export class DevChatPanel {
       this.panel?.webview.postMessage({ type: 'enableSend' });
     } catch (err) {
       this.panel?.webview.postMessage({ type: 'error', text: String(err) });
+      this.panel?.webview.postMessage({ type: 'enableSend' });
+    }
+  }
+
+  private static async sendRedistributeCommand(newRequirement: string): Promise<void> {
+    try {
+      const resp = await fetch(`${CHAT_SERVER_URL}/sessions/${this.sessionId}/redistribute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_requirement: newRequirement,
+          participant_name: this.participantName
+        })
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `HTTP ${resp.status}`);
+      }
+      this.panel?.webview.postMessage({ type: 'showThinking' });
+      this.panel?.webview.postMessage({ type: 'enableSend' });
+    } catch (err) {
+      this.panel?.webview.postMessage({ type: 'error', text: `Redistribute failed: ${err instanceof Error ? err.message : String(err)}` });
       this.panel?.webview.postMessage({ type: 'enableSend' });
     }
   }

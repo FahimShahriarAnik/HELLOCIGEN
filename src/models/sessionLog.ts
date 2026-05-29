@@ -63,7 +63,18 @@ export interface SessionLogDocument {
     [key: string]: unknown;
   };
   division_of_work: Division[];
+  division_version?: number;
+  pending_proposal?: PendingProposal;
   // chat_history removed — messages now stored per-document in the chatMessages collection
   // Allow extra top-level fields in the future
   [key: string]: unknown;
+}
+
+export interface PendingProposal {
+  id: string;
+  new_requirement: string;
+  reason?: string;
+  proposed_divisions: Division[];
+  created_at: string;
+  triggered_by: string;
 }
