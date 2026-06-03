@@ -49,6 +49,7 @@ MongoDB          OpenAI GPT-4 API (via @AI mention)
 | `src/ui/guestDevelopmentView.ts` | Guest post-division view showing assigned tasks |
 | `src/ui/taskTrackerProvider.ts` | Sidebar task tracker (singleton, shared by host & guests) |
 | `src/ui/initialSessionView.ts` | Welcome/initial session webview |
+| `src/utils/aiUtils.ts` | `generateDivisionOfWork` (initial) + `generateRedistribution` / `validateRedistribution` (mid-session re-plan) |
 | `src/utils/session_log_utils.ts` | Helpers for creating/patching session logs |
 | `src/utils/liveshareHelpers.ts` | Enums for Live Share Role and Access levels |
 
@@ -122,6 +123,13 @@ Output goes to `out/` (git-ignored). Extension main entry: `./out/extension.js`.
 3. Messages mentioning `@AI` (case-insensitive) trigger server-side GPT-4 response
 4. Regular messages (no @AI) are human-to-human — no AI invocation
 5. Chat history persisted to MongoDB `chat_history` array
+
+### Mid-session Task Redistribution (`/redistribute`)
+1. Any participant types `/redistribute <new requirement>` in DevChatPanel
+2. `POST /sessions/:id/redistribute` calls `generateRedistribution` (re-plan only `todo` items; freeze `done` + `in progress`; file-additive per owner) → validates → stores `pending_proposal` on session doc → posts diff to chat
+3. Host replies with standalone `accept` / `apply` / `approve` / `lgtm` → applies proposal to `division_of_work`, bumps `division_version`, clears `pending_proposal`. Standalone `reject` / `cancel` / `no` discards
+4. Sidebar task tracker picks up the new state on next 4s poll; session dashboard on next 5s poll
+5. Task ids are scoped per division (each division has its own `t1`, `t2`…) — validators must compare by `(owner_id, task_id)`
 
 ---
 

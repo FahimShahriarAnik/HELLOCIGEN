@@ -8,6 +8,7 @@ const SERVER_PORT = 4000;
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 let serverProcess: child_process.ChildProcess | null = null;
 let serverReady = false;
+let serverPortConflict = false;
 
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_DELAY_MS = 2000;
@@ -30,6 +31,7 @@ export class ServerManager {
     }
 
     this.intentionallyStopped = false;
+    serverPortConflict = false;
     output.appendLine("Starting MongoDB server...");
     const serverPath = path.join(__dirname, "server", "server.js");
 
@@ -44,8 +46,9 @@ export class ServerManager {
       const msg = data.toString();
       output.appendLine(`[SERVER ERROR] ${msg}`);
 
-      // Detect port conflict
+      // Detect port conflict — set flag so waitForReady can bail fast
       if (msg.includes("EADDRINUSE")) {
+        serverPortConflict = true;
         vscode.window.showErrorMessage(
           `Port ${SERVER_PORT} is already in use. Close the conflicting process or change the server port.`,
           "OK"
@@ -105,6 +108,9 @@ export class ServerManager {
   private async waitForReady(timeoutMs = 30000): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
+      if (serverPortConflict) {
+        throw new Error(`Port ${SERVER_PORT} in use — kill the conflicting process and retry`);
+      }
       try {
         const resp = await fetch(`${SERVER_URL}/health`);
         if (resp.ok) {

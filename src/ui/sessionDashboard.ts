@@ -22,6 +22,7 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
   private summaryText: string | undefined;
   public isHost: boolean = true;
   private pollTimer?: ReturnType<typeof setInterval>;
+  private lastDivisionsFingerprint: string | undefined;
 
   constructor(private context: vscode.ExtensionContext) {}
 
@@ -111,10 +112,18 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
         if (!resp.ok) return;
         const state = await resp.json() as any;
 
-        if (state.status === 'active' && this.sidebarState === 'welcome') {
-          this.sessionData = state;
-          this.sidebarState = 'dashboard';
-          this.render();
+        if (state.status === 'active') {
+          const incomingFp = JSON.stringify(state.division_of_work ?? []);
+          if (this.sidebarState === 'welcome') {
+            this.sessionData = state;
+            this.sidebarState = 'dashboard';
+            this.lastDivisionsFingerprint = incomingFp;
+            this.render();
+          } else if (this.sidebarState === 'dashboard' && incomingFp !== this.lastDivisionsFingerprint) {
+            this.sessionData = state;
+            this.lastDivisionsFingerprint = incomingFp;
+            this.render();
+          }
         }
 
         if (state.status === 'completed' && this.sidebarState !== 'completed') {
@@ -191,6 +200,7 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
     this.sessionData = null;
     this.summaryText = undefined;
     this.isHost = true;
+    this.lastDivisionsFingerprint = undefined;
     this.stopPolling();
   }
 
@@ -924,6 +934,15 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
 
   private async loadSessions(): Promise<void> {
     try {
+      // Guests must not start a local server: Live Share tunnels the host's
+      // port 4000 to this side, and a local server here would conflict and get
+      // killed when the tunnel kicks in, leaving polls (state, divisions, chat)
+      // hitting nothing.
+      const ls = await vsls.getApi();
+      if (ls?.session?.role === vsls.Role.Guest) {
+        this.view?.webview.postMessage({ type: "sessions", sessions: [] });
+        return;
+      }
       await serverManager.startServer();
       const sessions = await serverManager.httpFetch("/sessions");
       this.view?.webview.postMessage({ type: "sessions", sessions });

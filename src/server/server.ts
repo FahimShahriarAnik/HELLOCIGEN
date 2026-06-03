@@ -1147,6 +1147,30 @@ app.get('/sessions/:session_id/summary', async (req: Request, res: Response) => 
 });
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, '127.0.0.1', () => {
+const httpServer = app.listen(port, '127.0.0.1', () => {
   console.log(`Server listening on http://127.0.0.1:${port}`);
 });
+
+httpServer.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${port} already in use — exiting`);
+  } else {
+    console.error('Server error:', err);
+  }
+  process.exit(1);
+});
+
+// Parent (extension host) gone → exit so the port is freed and we don't orphan.
+process.on('disconnect', () => {
+  console.log('Parent disconnected, shutting down');
+  httpServer.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref();
+});
+
+const shutdown = (sig: string) => {
+  console.log(`Received ${sig}, shutting down`);
+  httpServer.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000).unref();
+};
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
