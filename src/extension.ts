@@ -133,6 +133,24 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
 
+      // MongoDB URI pre-flight (host only — guests connect via shareServer)
+      let mongoUri = await context.secrets.get('mongodb-uri');
+      if (!mongoUri) {
+        const action = await vscode.window.showWarningMessage(
+          "MongoDB URI not set. Session persistence cannot work without it.",
+          "Set MongoDB URI",
+          "Cancel"
+        );
+        if (action === "Set MongoDB URI") {
+          await vscode.commands.executeCommand("helloCigen.setMongoUri");
+          mongoUri = await context.secrets.get('mongodb-uri');
+        }
+        if (!mongoUri) {
+          vscode.window.showErrorMessage("Cannot start session: MongoDB URI is required.");
+          return;
+        }
+      }
+
       const liveShare = await vsls.getApi();
       if (!liveShare) {
         vscode.window.showErrorMessage("Live Share API not available.");
@@ -152,7 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
       /* ---------------- MONGO SERVER INITIALIZATION ---------------- */
       let projectDetails: any;
       try {
-        await serverManager.startServer();
+        await serverManager.startServer(mongoUri);
 
         // Forward API key to server for server-side AI chat
         if (apiKey) {
@@ -160,13 +178,15 @@ export function activate(context: vscode.ExtensionContext) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ apiKey })
-          }).catch(() => {}); // Non-critical
+          }).catch(err => output.appendLine(`API key forward failed: ${err}`));
         }
 
         projectDetails = await serverManager.httpFetch("/project_details");
         output.appendLine(`Loaded project details: ${JSON.stringify(projectDetails)}`);
       } catch (err) {
         output.appendLine(`Server error: ${err}`);
+        vscode.window.showErrorMessage(`Server error: ${err}`);
+        return;
       }
       /* ---------------- SESSION STATE TRACKING ---------------- */
       const logSession = () => {
