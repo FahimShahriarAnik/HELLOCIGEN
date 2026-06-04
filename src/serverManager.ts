@@ -18,20 +18,24 @@ const output = vscode.window.createOutputChannel("Server Manager");
 export class ServerManager {
   private restartCount = 0;
   private intentionallyStopped = false;
+  private _lastMongoUri: string | undefined;
 
-  async startServer(): Promise<void> {
+  async startServer(mongoUri?: string): Promise<void> {
     if (serverReady && serverProcess) {
       output.appendLine("Server already running");
       return;
     }
     if (serverProcess && !serverReady) {
       // Process spawned but not yet healthy — wait instead of re-forking
+      await this.waitForAlive();
+      if (mongoUri) await this.postMongoUri(mongoUri);
       await this.waitForReady();
       return;
     }
 
     this.intentionallyStopped = false;
     serverPortConflict = false;
+    if (mongoUri) this._lastMongoUri = mongoUri;
     output.appendLine("Starting MongoDB server...");
     const serverPath = path.join(__dirname, "server", "server.js");
 
@@ -67,6 +71,12 @@ export class ServerManager {
       }
     });
 
+    await this.waitForAlive();
+    if (mongoUri) {
+      await this.postMongoUri(mongoUri);
+    } else {
+      output.appendLine("[WARN] No MongoDB URI provided; DB-backed endpoints will fail until POST /mongo-uri is called");
+    }
     await this.waitForReady();
     this.restartCount = 0; // Reset on successful start
   }
@@ -91,18 +101,51 @@ export class ServerManager {
     await new Promise(resolve => setTimeout(resolve, RESTART_DELAY_MS));
 
     try {
-      await this.startServer();
+      await this.startServer(this._lastMongoUri);
     } catch (err) {
       output.appendLine(`Auto-restart failed: ${err}`);
     }
   }
 
-  async restartServer(): Promise<void> {
+  async restartServer(mongoUri?: string): Promise<void> {
     output.appendLine("Manual server restart requested");
     this.stopServer();
     this.restartCount = 0;
     await new Promise(resolve => setTimeout(resolve, 500));
-    await this.startServer();
+    await this.startServer(mongoUri);
+  }
+
+  private async waitForAlive(timeoutMs = 15000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (serverPortConflict) {
+        throw new Error(`Port ${SERVER_PORT} in use — kill the conflicting process and retry`);
+      }
+      try {
+        const resp = await fetch(`${SERVER_URL}/alive`);
+        if (resp.ok) {
+          output.appendLine("Server process is alive.");
+          return;
+        }
+      } catch {
+        // not bound yet
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error("Server process failed to bind within 15s");
+  }
+
+  private async postMongoUri(uri: string): Promise<void> {
+    const resp = await fetch(`${SERVER_URL}/mongo-uri`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`Failed to forward MongoDB URI to server: ${resp.status} ${body}`);
+    }
+    output.appendLine("MongoDB URI forwarded to server.");
   }
 
   private async waitForReady(timeoutMs = 30000): Promise<void> {
@@ -118,12 +161,12 @@ export class ServerManager {
           output.appendLine("Server is ready!");
           return;
         }
-      } catch (err) {
-        // Server not ready yet
+      } catch {
+        // DB not reachable yet
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    throw new Error("Server failed to start within 30s");
+    throw new Error("Server failed to become healthy within 30s (DB unreachable?)");
   }
 
   async httpFetch(endpoint: string, options: import("node-fetch").RequestInit = {}): Promise<any> {
