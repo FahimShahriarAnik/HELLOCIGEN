@@ -1187,14 +1187,18 @@ httpServer.on('error', (err: NodeJS.ErrnoException) => {
 // Parent (extension host) gone → exit so the port is freed and we don't orphan.
 process.on('disconnect', () => {
   console.log('Parent disconnected, shutting down');
-  httpServer.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 3000).unref();
+  closeDb().finally(() => {
+    httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+  });
 });
 
 const shutdown = (sig: string) => {
   console.log(`Received ${sig}, shutting down`);
-  httpServer.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 5000).unref();
+  closeDb().finally(() => {
+    httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 5000).unref();
+  });
 };
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
