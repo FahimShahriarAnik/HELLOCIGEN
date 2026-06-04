@@ -198,8 +198,8 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
       if (!resp.ok) return;
       const data = await resp.json() as { assessment: string };
       vscode.window.showInformationMessage(`Code Review: ${data.assessment}`);
-    } catch {
-      // Non-critical
+    } catch (err) {
+      console.error('[taskTrackerProvider] code review trigger failed (non-critical):', err);
     }
   }
 
@@ -208,13 +208,17 @@ export class TaskTrackerProvider implements vscode.WebviewViewProvider {
     this._skipNextPoll = true;
     this._lastFingerprint = divisionsFingerprint(this._divisions);
     try {
-      await fetch(`${SERVER_URL}/sessions/${this._sessionId}/divisions`, {
+      const resp = await fetch(`${SERVER_URL}/sessions/${this._sessionId}/divisions`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ division_of_work: this._divisions })
       });
-    } catch {
-      // Non-critical — local state is already updated
+      if (!resp.ok) {
+        const body = await resp.text();
+        vscode.window.showWarningMessage(`Task tracker failed to sync to server: HTTP ${resp.status} ${body}`);
+      }
+    } catch (err) {
+      vscode.window.showWarningMessage(`Task tracker failed to sync to server: ${err}`);
     }
   }
 
