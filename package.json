@@ -60,6 +60,14 @@
         "title": "HELLOCIGEN: Clear OpenAI API Key"
       },
       {
+        "command": "helloCigen.setMongoUri",
+        "title": "HELLOCIGEN: Set MongoDB URI"
+      },
+      {
+        "command": "helloCigen.clearMongoUri",
+        "title": "HELLOCIGEN: Clear MongoDB URI"
+      },
+      {
         "command": "helloCigen.restartServer",
         "title": "HELLOCIGEN: Restart Server"
       }

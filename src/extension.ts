@@ -281,10 +281,39 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const setMongoUriCmd = vscode.commands.registerCommand(
+    "helloCigen.setMongoUri",
+    async () => {
+      const uri = await vscode.window.showInputBox({
+        prompt: "Enter your MongoDB connection URI (mongodb+srv://...)",
+        password: true,
+        ignoreFocusOut: true,
+        placeHolder: "mongodb+srv://user:pass@cluster.mongodb.net/db?...",
+      });
+
+      if (uri) {
+        await context.secrets.store("mongodb-uri", uri);
+        vscode.window.showInformationMessage(
+          "MongoDB URI saved successfully!"
+        );
+      }
+    }
+  );
+
+  const clearMongoUriCmd = vscode.commands.registerCommand(
+    "helloCigen.clearMongoUri",
+    async () => {
+      await context.secrets.delete("mongodb-uri");
+      vscode.window.showInformationMessage("MongoDB URI cleared.");
+    }
+  );
+
   context.subscriptions.push(disposable);
   context.subscriptions.push(restartServerCmd);
   context.subscriptions.push(setApiKeyCmd);
   context.subscriptions.push(clearApiKeyCmd);
+  context.subscriptions.push(setMongoUriCmd);
+  context.subscriptions.push(clearMongoUriCmd);
 }
 
 export async function deactivate() {
