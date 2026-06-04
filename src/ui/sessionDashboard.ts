@@ -885,6 +885,24 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
         }
       }
 
+      // MongoDB URI pre-flight (host only — guests connect via shareServer)
+      let mongoUri = await this.context.secrets.get('mongodb-uri');
+      if (!mongoUri) {
+        const action = await vscode.window.showWarningMessage(
+          "MongoDB URI not set. Session persistence cannot work without it.",
+          "Set MongoDB URI",
+          "Cancel"
+        );
+        if (action === "Set MongoDB URI") {
+          await vscode.commands.executeCommand("helloCigen.setMongoUri");
+          mongoUri = await this.context.secrets.get('mongodb-uri');
+        }
+        if (!mongoUri) {
+          this.postStartStatus(false, "MongoDB URI is required to start a session.");
+          return;
+        }
+      }
+
       const liveShare = await vsls.getApi();
       if (!liveShare) {
         this.postStartStatus(false, "Live Share API not available.");
@@ -893,7 +911,7 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
       await liveShare.share();
       this.postStartStatus(true, "Session started. Loading projects...");
 
-      await serverManager.startServer();
+      await serverManager.startServer(mongoUri);
 
       if (apiKey) {
         try {
@@ -943,7 +961,15 @@ export class SessionDashboard implements vscode.WebviewViewProvider {
         this.view?.webview.postMessage({ type: "sessions", sessions: [] });
         return;
       }
-      await serverManager.startServer();
+      const uri = await this.context.secrets.get('mongodb-uri');
+      if (!uri) {
+        // No URI configured — show empty list rather than triggering a startup error.
+        // The prompt-on-create-session path is where the URI gets set; loading the
+        // dashboard alone shouldn't pester the user.
+        this.view?.webview.postMessage({ type: "sessions", sessions: [] });
+        return;
+      }
+      await serverManager.startServer(uri);
       const sessions = await serverManager.httpFetch("/sessions");
       this.view?.webview.postMessage({ type: "sessions", sessions });
     } catch (err) {
