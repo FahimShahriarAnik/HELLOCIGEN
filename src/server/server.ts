@@ -1,6 +1,6 @@
 // src/server.ts
 import express from "express";
-import { getProjectConfigCollection, getSessionLogCollection, getChatMessagesCollection, ChatMessageDoc } from "./db";
+import { getProjectConfigCollection, getSessionLogCollection, getChatMessagesCollection, ChatMessageDoc, setMongoUri, pingDb, closeDb } from "./db";
 import { ProjectConfigDocument } from "../models/projectConfig";
 import { SessionLogDocument, Division, PendingProposal } from "../models/sessionLog";
 import type { Request, Response } from "express";
@@ -74,6 +74,13 @@ function broadcastMessages(session_id: string, messages: ChatMessageDoc[]): void
   }
 }
 
+// Process-level liveness — returns 200 as soon as Express is bound.
+// Used by serverManager to know when it's safe to POST /mongo-uri.
+app.get("/alive", (_req: Request, res: Response) => {
+  res.sendStatus(200);
+});
+
+// DB-aware health — updated in a later commit to probe MongoDB.
 app.get("/health", (_req: Request, res: Response) => {
   res.sendStatus(200);
 });
@@ -707,6 +714,16 @@ app.post('/api-key', (req: Request, res: Response) => {
   const { apiKey } = req.body as { apiKey: string };
   if (!apiKey) return res.status(400).json({ ok: false, error: 'apiKey is required' });
   openaiApiKey = apiKey;
+  res.json({ ok: true });
+});
+
+// POST /mongo-uri — host-only. Receives the MongoDB connection URI from
+// the extension on startup. URI lives in db.ts module-private state until
+// the server process exits.
+app.post('/mongo-uri', (req: Request, res: Response) => {
+  const { uri } = req.body as { uri: string };
+  if (!uri) return res.status(400).json({ ok: false, error: 'uri is required' });
+  setMongoUri(uri);
   res.json({ ok: true });
 });
 
