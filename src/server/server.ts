@@ -80,9 +80,16 @@ app.get("/alive", (_req: Request, res: Response) => {
   res.sendStatus(200);
 });
 
-// DB-aware health — updated in a later commit to probe MongoDB.
-app.get("/health", (_req: Request, res: Response) => {
-  res.sendStatus(200);
+// DB-aware health probe. Returns 200 only when MongoDB is reachable.
+// Used by serverManager.waitForReady; failure here means the extension
+// will refuse to start (fail-loud over silent persistence loss).
+app.get("/health", async (_req: Request, res: Response) => {
+  const ok = await pingDb();
+  if (ok) {
+    res.json({ ok: true, dbReachable: true, db: 'session_logs' });
+  } else {
+    res.status(503).json({ ok: false, dbReachable: false, error: 'MongoDB ping failed (URI not set or cluster unreachable)' });
+  }
 });
 
 // 1) Upsert (store/rewrite) the single static project config
